@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic Loop Reference</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main><article>
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Reference · TS 1.1, 2.3, 4.3</div>
+<h1>Agentic loop &amp; tool_choice</h1>
+<p class="subtitle">One-page cheat sheet. Taught in <a href="../lessons/0001-the-agentic-loop.html">Lesson 1</a>.</p>
+
+<h2>The loop (TypeScript)</h2>
+<pre>while (true) {
+  const res = await client.messages.create({ model, max_tokens, tools, tool_choice, messages });
+  if (res.stop_reason === "end_turn") return text(res);          <span class="c">// done</span>
+  if (res.stop_reason !== "tool_use") handleOther(res);           <span class="c">// max_tokens, pause_turn, refusal…</span>
+  messages.push({ role: "assistant", content: res.content });     <span class="c">// verbatim</span>
+  messages.push({ role: "user", content: res.content
+    .filter(b =&gt; b.type === "tool_use")
+    .map(b =&gt; run(b)) });                                          <span class="c">// ALL results, ONE message</span>
+}</pre>
+
+<h2>tool_result rules</h2>
+<ul>
+  <li>Shape: <code>{type:"tool_result", tool_use_id, content?, is_error?}</code></li>
+  <li>The results go in the user message <b>immediately after</b> the assistant <code>tool_use</code> turn</li>
+  <li>tool_result blocks come <b>first</b>; any text goes after them (text first → 400)</li>
+  <li>One result per <code>tool_use</code> id, never dropped. A failure is <code>is_error: true</code></li>
+  <li>Parallel results go in <b>one</b> message; splitting them teaches Claude to stop parallelizing</li>
+</ul>
+
+<h2>stop_reason</h2>
+<table>
+  <tr><th>Value</th><th>Action</th></tr>
+  <tr><td><code>tool_use</code></td><td>Run tools, append results, continue</td></tr>
+  <tr><td><code>end_turn</code></td><td>Finished; return the answer</td></tr>
+  <tr><td><code>max_tokens</code></td><td>Truncated; retry with a higher limit</td></tr>
+  <tr><td><code>pause_turn</code></td><td>Server-tool pause; resend the assistant turn unchanged</td></tr>
+  <tr><td><code>refusal</code></td><td>Declined; read <code>stop_details</code></td></tr>
+  <tr><td><code>stop_sequence</code></td><td>Custom stop sequence hit</td></tr>
+  <tr><td><code>model_context_window_exceeded</code></td><td>Context full; treat as truncated</td></tr>
+</table>
+
+<h2>Termination anti-patterns (exam)</h2>
+<ol>
+  <li>Parsing natural language ("done", "final answer")</li>
+  <li>Iteration cap as the <b>primary</b> stop (a cap as a backstop is fine)</li>
+  <li>"Response has text → finished"</li>
+</ol>
+
+<h2>tool_choice</h2>
+<table>
+  <tr><th>Value</th><th>Guarantee</th><th>Use when</th></tr>
+  <tr><td><code>auto</code></td><td>None; may reply with text</td><td>Normal agent turns</td></tr>
+  <tr><td><code>any</code></td><td>Some tool is called</td><td>Several schemas, unknown doc type</td></tr>
+  <tr><td><code>{type:"tool",name}</code></td><td>That tool is called</td><td>Must run X first (turn 1 only, then <code>auto</code>)</td></tr>
+  <tr><td><code>none</code></td><td>No tools</td><td>—</td></tr>
+</table>
+<ul>
+  <li><code>any</code>/<code>tool</code> → no text before <code>tool_use</code> (the turn is prefilled)</li>
+  <li>Forced choice on every turn → <code>end_turn</code> never arrives → infinite loop</li>
+  <li><code>disable_parallel_tool_use</code> goes inside <code>tool_choice</code>: <code>auto</code> ≤ 1 call, <code>any</code>/<code>tool</code> exactly 1</li>
+  <li>Manual extended thinking supports only <code>auto</code>/<code>none</code></li>
+</ul>
+
+<div class="callout exam"><span class="label">Exam vs reality</span>
+Exam: <code>any</code>/forced = guaranteed tool call. Reality: Opus 5.5 / Sonnet 5.5 / Fable 5.1 return a 400 for both. Use <code>auto</code> + <code>strict: true</code>, or structured outputs (<code>output_config.format</code>).</div>
+
+<p style="font-size:.85rem;color:var(--muted)">Sources: <a href="https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons">Handling stop reasons</a> · <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls">Handle tool calls</a> · <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools">Define tools</a> · <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use">Parallel tool use</a></p>
+</article></main>
+</body>
+</html>

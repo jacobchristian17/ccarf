@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Agentic Loop</title>
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+</head>
+<body>
+<main><article>
+
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Lesson 1 of 13 · Domain 1 (27%) + Domain 2/4 overlap</div>
+<h1>The agentic loop</h1>
+<p class="subtitle">stop_reason is the only reliable signal for whether the agent should keep going</p>
+
+<div class="meta">
+  <span><b>Task statements</b> 1.1 · 2.3 (tool_choice) · 4.3 (tool_choice)</span>
+  <span><b>Time</b> ~15 min read · ~45 min build · ~10 min quiz</span>
+  <span><b>Scenario</b> 1, Customer Support Resolution Agent</span>
+</div>
+
+<details class="recall">
+  <summary>Warm-up: before reading, predict</summary>
+  <div>You already run Claude tool loops. Write down (on paper, not in your head) the <em>three</em> loop-termination anti-patterns you think the exam lists, and what Claude returns under <code>tool_choice: {"type":"any"}</code> when asked to "explain first, then call the tool". Check yourself against §2 and §4.</div>
+</details>
+
+<h2>1 · The loop</h2>
+
+<p>A Claude agent is a <code>while</code> loop over one endpoint. Each iteration you send the whole conversation, read <code>stop_reason</code>, and act on it:<span class="sn-ref"></span><span class="sidenote"><a href="https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons">Handling stop reasons</a>, Anthropic Docs.</span></p>
+
+<svg viewBox="0 0 640 200" width="100%" style="max-width:680px;font-family:var(--sans);font-size:12px" role="img" aria-label="Agentic loop diagram">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--muted)"/></marker></defs>
+  <g fill="none" stroke="var(--rule)" stroke-width="1.5">
+    <rect x="10" y="70" width="130" height="50" rx="6"/>
+    <rect x="200" y="70" width="130" height="50" rx="6" stroke="var(--accent)"/>
+    <rect x="400" y="10" width="220" height="50" rx="6"/>
+    <rect x="400" y="130" width="220" height="50" rx="6"/>
+  </g>
+  <g fill="var(--fg)" text-anchor="middle">
+    <text x="75" y="92">messages.create</text><text x="75" y="108" fill="var(--muted)">(full history)</text>
+    <text x="265" y="92" fill="var(--accent)" font-weight="600">stop_reason?</text><text x="265" y="108" fill="var(--muted)">the only branch signal</text>
+    <text x="510" y="32">run every tool_use block</text><text x="510" y="48" fill="var(--muted)">append assistant + ONE user msg of results</text>
+    <text x="510" y="152">return final answer</text><text x="510" y="168" fill="var(--muted)">loop ends</text>
+  </g>
+  <g stroke="var(--muted)" stroke-width="1.3" fill="none" marker-end="url(#a)">
+    <path d="M140,95H198"/>
+    <path d="M330,85 C365,85 365,35 398,35"/>
+    <path d="M330,105 C365,105 365,155 398,155"/>
+    <path d="M510,10 C510,-5 75,-5 75,68"/>
+  </g>
+  <g fill="var(--muted)" font-size="11">
+    <text x="335" y="52">"tool_use"</text>
+    <text x="335" y="150">"end_turn"</text>
+  </g>
+</svg>
+
+<p>Three mechanics matter, and the exam probes all three:</p>
+<ol>
+  <li><b>Append the assistant turn as-is.</b> Push <code>response.content</code> unchanged. On current models it can contain thinking blocks you must not drop or edit.</li>
+  <li><b>Return one <code>tool_result</code> per <code>tool_use</code> id, all in a single user message.</b> The results go in the message immediately after the assistant turn, and all <code>tool_result</code> blocks come <em>before</em> any text in it. Text first returns a 400.<span class="sn-ref"></span><span class="sidenote"><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls">Handle tool calls</a>: shape <code>{type, tool_use_id, content, is_error?}</code> and the ordering rule.</span> Splitting parallel results across several messages teaches Claude to stop calling tools in parallel.<span class="sn-ref"></span><span class="sidenote"><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use">Parallel tool use</a>.</span></li>
+  <li><b>Failures are results too.</b> If a tool throws, return a <code>tool_result</code> with <code>is_error: true</code> and the message. Never skip it, because a missing result is a 400 and gives Claude nothing to reason about.</li>
+</ol>
+
+<p>Also: who chooses the next step? In an <em>agent</em>, Claude does, based on the tool results now in context. A hard-coded tool sequence is a <em>workflow</em>. That's a valid design, but it isn't what 1.1 means by "model-driven decision-making".<span class="sn-ref"></span><span class="sidenote"><a href="https://www.anthropic.com/engineering/building-effective-agents">Building Effective AI Agents</a>, Anthropic: the workflows vs agents distinction.</span></p>
+
+<h2>2 · Three ways to stop the loop wrongly</h2>
+
+<p>The guide names these exact anti-patterns (1.1 skills). Each one bases the stop decision on something other than <code>stop_reason</code>:</p>
+
+<table>
+  <tr><th>Anti-pattern</th><th>Why it breaks</th></tr>
+  <tr><td>Parsing natural language ("I'm done", "Final answer:")</td><td>Wording isn't a protocol. It's brittle across prompts and models, and it ignores the structured signal you already have.</td></tr>
+  <tr><td>An iteration cap as the <em>primary</em> stop</td><td>It cuts off legitimate long tasks and lets broken loops run up to the cap. A cap is fine as a <em>backstop</em>; the exam wording is "as the primary stopping mechanism".</td></tr>
+  <tr><td>"Has text content → done"</td><td>Claude often emits text <em>alongside</em> <code>tool_use</code> ("Let me look that up…"). Text in the response doesn't mean the turn is finished.</td></tr>
+</table>
+
+<div class="callout key"><span class="label">Exam heuristic</span>
+Read "iteration cap" options carefully. "Cap as a safety net, terminate on <code>end_turn</code>" is fine. "Rely on a cap to end the loop" is the anti-pattern.</div>
+
+<h3>Production reality: more than two stop reasons</h3>
+<p>The guide only tests <code>tool_use</code> and <code>end_turn</code>, but a real loop must handle the rest explicitly rather than looping forever on them:</p>
+<div class="table-wrap"><table>
+  <tr><th>stop_reason</th><th>Meaning → action</th></tr>
+  <tr><td><code>max_tokens</code></td><td>Output was truncated, and a tool_use block may be incomplete. Retry with a higher limit.</td></tr>
+  <tr><td><code>pause_turn</code></td><td>A <em>server</em>-tool loop hit its iteration limit. Send the assistant content back unchanged to continue.</td></tr>
+  <tr><td><code>refusal</code></td><td>Claude declined. Read <code>stop_details</code> (null for every other reason).</td></tr>
+  <tr><td><code>stop_sequence</code></td><td>One of your <code>stop_sequences</code> fired.</td></tr>
+  <tr><td><code>model_context_window_exceeded</code></td><td>The context window is full. Treat the output as truncated.</td></tr>
+</table></div>
+
+<h2>3 · tool_choice</h2>
+
+<div class="table-wrap"><table>
+  <tr><th>Value</th><th>Behaviour</th><th>Exam use</th></tr>
+  <tr><td><code>{"type":"auto"}</code></td><td>Claude may call a tool <em>or</em> reply with text. Default when tools are given.</td><td>Normal agent turns</td></tr>
+  <tr><td><code>{"type":"any"}</code></td><td>Must call <em>some</em> tool; Claude picks which.</td><td>Guarantee structured output when several extraction schemas exist and the document type is unknown</td></tr>
+  <tr><td><code>{"type":"tool","name":"x"}</code></td><td>Must call tool <code>x</code>.</td><td>Force <code>extract_metadata</code> first, then later steps in follow-up turns</td></tr>
+  <tr><td><code>{"type":"none"}</code></td><td>No tool calls. Default when no tools are given.</td><td>—</td></tr>
+</table></div>
+<p class="sn-ref-holder">Two details the docs state outright:<span class="sn-ref"></span><span class="sidenote"><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools">Define tools → Forcing tool use</a>, Anthropic Docs.</span></p>
+<ul>
+  <li>Under <code>any</code> or <code>tool</code>, the API prefills the assistant turn, so <b>Claude writes no explanatory text before the <code>tool_use</code> block, even if asked to.</b> If you want both, use <code>auto</code> and ask for the tool call in the prompt.</li>
+  <li><code>disable_parallel_tool_use: true</code> goes <em>inside</em> the <code>tool_choice</code> object. With <code>auto</code> it means at most one call; with <code>any</code>/<code>tool</code>, exactly one.</li>
+</ul>
+
+<div class="callout exam"><span class="label">Exam answer vs current reality</span>
+<div class="vs">
+  <div><h4>On the exam</h4><code>tool_choice: "any"</code> guarantees a tool call, and forced <code>{"type":"tool"}</code> guarantees a specific one. Pick these answers.</div>
+  <div><h4>In production today</h4>Opus 5.5, Sonnet 5.5 and Fable 5.1 <b>return a 400</b> for <code>any</code>/<code>tool</code>. The replacement is <code>auto</code> + <code>strict: true</code> on the tool, or structured outputs (<code>output_config.format</code>). Earlier models such as <code>claude-opus-5</code> still accept forced choice; the lab uses one.</div>
+</div></div>
+
+<h2>4 · Build: your own loop, then break it</h2>
+
+<p>The lab lives in <code>lab/</code> (deps already installed). The mock backend in <code>lab/shared/backend.ts</code> is the Scenario 1 store, with <code>get_customer</code> and <code>lookup_order</code>. Lessons 2 and 3 grow it into an MCP server and an Agent SDK agent with hooks.</p>
+
+<div class="callout warn"><span class="label">Setup (PowerShell)</span>
+<pre>$env:ANTHROPIC_API_KEY = "sk-ant-…"     # your key, this shell only
+cd C:\Users\wsenr\repos\ccarf\lab
+npm run l1 -- "Where is order #12345? My email is jane@example.com"</pre>
+Each run costs cents. To set the model or tool choice per run: <code>$env:MODEL="claude-opus-5"; $env:TOOL_CHOICE="any"</code>. Clear them with <code>Remove-Item Env:TOOL_CHOICE</code>.</div>
+
+<ol class="steps">
+  <li><b>Implement TODOs 1–4</b> in <code>lab/01-agentic-loop/loop.ts</code>, about 25 lines. Don't open <code>solution/</code> yet. Run the default prompt and confirm you get <code>tool_use</code> → … → <code>end_turn</code> and a final answer.</li>
+  <li><b>Observe the content blocks.</b> In iterations that end in <code>tool_use</code>, which <em>other</em> block types appear next to the <code>tool_use</code> (text? thinking?). <em>Predict before running.</em> Whatever you see is evidence against the "text means done" anti-pattern.</li>
+  <li><b>Parallel calls.</b> Run <code>"I'm jane@example.com. Compare orders 12345 and 12346."</code> Do you get several <code>tool_use</code> blocks in one response? Check that your loop returns all the results in <em>one</em> user message.</li>
+  <li><b>Errors are data.</b> Run <code>"Where is order 99999? I'm omar@example.com"</code>. The backend throws a 504. Confirm your loop sends <code>is_error: true</code>, and read how Claude explains it to the customer.</li>
+  <li><b>Break the protocol on purpose.</b> Temporarily put a text block <em>before</em> the tool_results in your user message, and read the 400. Then drop one tool_result from a parallel call and read that error. Revert.</li>
+  <li><b>Forced tool choice.</b> Set <code>$env:MODEL="claude-opus-5"; $env:TOOL_CHOICE="any"</code> and send <code>"hi there!"</code>. A greeting gets a tool call. Now look at your logs: <em>does the loop ever end?</em> Explain why, then fix it so forcing applies <b>only on iteration 1</b> and later turns use <code>auto</code>. This is exactly the guide's "force extract_metadata first, then process subsequent steps in follow-up turns".</li>
+  <li><b>Reality check.</b> Keep <code>TOOL_CHOICE=any</code> and switch <code>$env:MODEL="claude-opus-5-5"</code>. Read the 400. That's the gap between the exam and current models.</li>
+  <li><b>Preview of Lesson 3.</b> Clear the env vars and run <code>"I'm Jane Rivera, where's my latest order?"</code>. <code>get_customer</code> returns <em>two</em> Janes. Does Claude ask for another identifier, or guess? (The guide's 5.2 answer: it should ask.)</li>
+</ol>
+
+<details class="recall">
+  <summary>Step 6: why the forced loop never ends</summary>
+  <div>Under <code>any</code>, every response <em>must</em> contain a tool call, so <code>stop_reason</code> is always <code>"tool_use"</code> and <code>"end_turn"</code> can never arrive. Only your backstop cap stops it. Fix: <code>tool_choice: i === 1 ? forced : {type: "auto"}</code>. Forced choice is a one-turn tool, not a loop setting.</div>
+</details>
+<details class="recall">
+  <summary>Reference solution</summary>
+  <div>Open <code>lab/01-agentic-loop/solution/loop.ts</code>, or run <code>npm run l1:solution</code>. Compare how it handles <code>max_tokens</code>, <code>pause_turn</code> and <code>refusal</code>.</div>
+</details>
+
+<h2>5 · Scenario check</h2>
+<p>Exam format: one best answer unless the item says "Select N". Commit to an answer before you click.</p>
+
+<section class="quiz" data-quiz="0001-agentic-loop">
+
+  <div class="item" data-ts="1.1">
+    <div class="stem">Your support agent sometimes replies "Let me check that order for you" and then stops without ever calling <code>lookup_order</code>. The loop code exits as soon as a response contains a text block. What is the correct fix?</div>
+    <ol class="opts">
+      <li>Exit when the reply text contains a completion phrase such as "anything else?"</li>
+      <li data-correct>Continue while stop_reason is "tool_use" and exit only on "end_turn"</li>
+      <li>Raise the iteration cap so the agent gets more turns to finish its work</li>
+      <li>Instruct Claude in the system prompt to never emit text before tool calls</li>
+    </ol>
+    <div class="explain">Claude often emits text <em>alongside</em> a <code>tool_use</code> block, so "text present" doesn't mean the turn is complete. <code>stop_reason</code> is the structured signal. A is the natural-language-parsing anti-pattern, C misreads the cause, and D is fragile prompt compliance aimed at the wrong signal.</div>
+  </div>
+
+  <div class="item" data-ts="1.1">
+    <div class="stem">After <code>lookup_order</code> runs successfully, Claude's next response asks the customer for the order number again, as if the lookup never happened. Your loop executes tools correctly and logs their output. What is the most likely cause?</div>
+    <ol class="opts">
+      <li>The tool description for lookup_order is too short to be understood</li>
+      <li>tool_choice is set to "auto" instead of forcing lookup_order to run</li>
+      <li data-correct>The tool results are not appended to the messages sent next request</li>
+      <li>The model's context window is exhausted by the order lookup output</li>
+    </ol>
+    <div class="explain">The API is stateless: Claude only knows what is in <code>messages</code>. If you execute the tool but never append the assistant turn plus a user message with the <code>tool_result</code>, the next request has no record of the lookup. A and B affect <em>whether</em> the tool gets called, but it was called. D wouldn't produce a clean "ask again".</div>
+  </div>
+
+  <div class="item" data-ts="2.3 · 4.3">
+    <div class="stem">An extraction service receives documents that may be invoices, receipts or purchase orders. Each has its own extraction tool. Testing shows Claude sometimes answers in prose instead of calling any tool. The document type is not known in advance. Which <code>tool_choice</code> fits?</div>
+    <ol class="opts">
+      <li><code>{"type": "auto"}</code> with a stronger instruction to use the tools</li>
+      <li data-correct><code>{"type": "any"}</code> so a tool must be called but Claude picks which</li>
+      <li><code>{"type": "tool", "name": "extract_invoice"}</code> as the safest default</li>
+      <li><code>{"type": "none"}</code> and parse JSON out of the text response</li>
+    </ol>
+    <div class="explain"><code>any</code> guarantees a tool call while leaving the choice of schema to Claude, which matches "multiple schemas, unknown type" (4.3 skill). A still allows prose. C forces the wrong schema for receipts and POs. D gives up schema guarantees entirely. <em>Reality note:</em> on Opus 5.5 / Sonnet 5.5 you'd use <code>auto</code> + <code>strict</code> or structured outputs, but the exam answer is B.</div>
+  </div>
+
+  <div class="item" data-ts="2.3 · 4.3">
+    <div class="stem">A pipeline must run <code>extract_metadata</code> before any enrichment tool. You set <code>tool_choice: {"type": "tool", "name": "extract_metadata"}</code> on every request of the loop. Runs now hit the iteration cap and never finish. Why, and what fixes it?</div>
+    <ol class="opts">
+      <li>Forcing blocks parallel calls; add disable_parallel_tool_use to allow them</li>
+      <li>The metadata tool output is too large; trim it before returning results</li>
+      <li>Claude ignores forced tools when thinking is on; turn thinking fully off</li>
+      <li data-correct>Forcing makes every turn a tool call; force turn one then switch to auto</li>
+    </ol>
+    <div class="explain">Under forced choice, every response must call the tool, so <code>end_turn</code> never arrives. The guide's pattern: force the first step, then "process subsequent steps in follow-up turns" with <code>auto</code>. A is backwards (that setting <em>limits</em> parallel calls). B and C don't explain an endless loop.</div>
+  </div>
+
+  <div class="item" data-ts="1.1">
+    <div class="stem">Claude returns two <code>tool_use</code> blocks in one response: <code>get_customer</code> and <code>lookup_order</code>. How should your loop return the results?</div>
+    <ol class="opts">
+      <li>Send each tool_result in its own user message, in the order they ran</li>
+      <li data-correct>Send both tool_results in one user message, before any text blocks</li>
+      <li>Send only the first result and let Claude call the second tool again</li>
+      <li>Merge both outputs into one text block in a single user message</li>
+    </ol>
+    <div class="explain">Every <code>tool_use</code> id needs a matching <code>tool_result</code>, all in the single user message that immediately follows, with results before any text. A breaks the "immediately follows" rule and trains Claude away from parallel calls. C leaves an id unanswered (400). D drops the <code>tool_use_id</code> correlation.</div>
+  </div>
+
+  <div class="item" data-ts="1.1">
+    <div class="stem">A reviewer lists practices in a teammate's agent loop. Which three are the anti-patterns that the exam guide warns against? (Select 3)</div>
+    <ol class="opts">
+      <li data-correct>Ending the loop when the reply contains the phrase "task complete"</li>
+      <li>Branching on stop_reason and returning tool results each iteration</li>
+      <li data-correct>Relying on a 5-iteration cap as the main way the loop terminates</li>
+      <li>Keeping a generous iteration cap purely as a runaway-loop backstop</li>
+      <li data-correct>Treating any response with a text block as a finished final answer</li>
+    </ol>
+    <div class="explain">A, C and E are the guide's three anti-patterns: NL parsing, cap as <em>primary</em> mechanism, and text-content-as-completion. D is the subtle distractor: a cap as a <em>backstop</em> is sound engineering. B is the correct loop.</div>
+  </div>
+
+  <div class="item" data-ts="2.3">
+    <div class="stem">With <code>tool_choice: {"type": "any"}</code>, you ask Claude to "briefly explain your reasoning, then call the right tool." Responses contain only a <code>tool_use</code> block with no explanation. What explains this?</div>
+    <ol class="opts">
+      <li>The tool descriptions are too long, so Claude skips the explanation step</li>
+      <li>"any" disables thinking, so Claude cannot reason before acting</li>
+      <li data-correct>Under "any" the API prefills the turn, so no text precedes tool_use</li>
+      <li>The request needs disable_parallel_tool_use set to allow extra text</li>
+    </ol>
+    <div class="explain">With <code>any</code> or <code>tool</code>, the API prefills the assistant message to force a tool call, so Claude emits no natural-language text before the <code>tool_use</code>, even when asked. To get both, use <code>auto</code> and request the tool call in the prompt.</div>
+  </div>
+
+</section>
+
+<div class="source"><span class="label">Primary source · read this next</span>
+<p style="margin:.3rem 0 0"><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/build-a-tool-using-agent"><b>Tutorial: Build a tool-using agent</b></a> (Anthropic Docs). It builds the same loop in five "rings", from a single call to a parallel, error-handling loop to Tool Runner, with TypeScript code. Then skim <a href="https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons">Handling stop reasons</a>. Cheat sheet: <a href="../reference/agentic-loop.html">reference/agentic-loop</a>.</p>
+</div>
+
+<p class="ask">Stuck on a TODO, surprised by a log line, or unsure why a distractor is wrong? Ask me. I'm your tutor for this course. When you finish, paste your quiz summary line and tell me what you saw in steps 2 and 8.</p>
+
+<div class="nav-lessons"><a href="../index.html">← Course home</a><span>Next: Lesson 2 · Tool descriptions and structured MCP errors →</span></div>
+
+</article></main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

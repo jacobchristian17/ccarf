@@ -1,0 +1,55 @@
+{
+  "mode": "live",
+  "model": "jev-1.13.0",
+  "httpTimeoutMs": 6000,
+  "attempts": 2,
+  "deadlineMs": 14000,
+  "recentPrompts": 3,
+  "maxCharsPerPrompt": 1500,
+  "markStyle": "dialog",
+  "thresholds": {
+    "decides": 0.5,
+    "confidence": 0.75,
+    "fits": 0.5,
+    "fitsFloor": 0.1,
+    "undoPick": 0.3,
+    "irreversibleAny": 0.7,
+    "content": 0.5,
+    "knowledgeCheck": 0.5
+  },
+  "whenNotDecided": {
+    "irreversible": "mark",
+    "content": "pick",
+    "other": "mark"
+  },
+  "skipQuestionPatterns": ["\\b(quiz|exam|mock test|practice question|knowledge check)\\b"],
+  "disabledPaths": [],
+  "wording": {
+    "pick": "Which option best fits what the user has asked for in `conversation`, as an answer to `question`?",
+    "decides": {
+      "instructions": "Does `conversation` contain a statement that favors one of the options in `options` as the answer to `question`?",
+      "true": "The user stated a preference, constraint or requirement that favors one option.",
+      "false": "The user has said nothing that favors one option over the others."
+    },
+    "fits": {
+      "instructions": "Does at least one option in `options` do what the user asked for in `conversation`?",
+      "true": "At least one option does what the user asked for.",
+      "false": "None of the options does what the user asked for."
+    },
+    "undo": {
+      "instructions": "Would carrying out `options[{i}]` delete data, overwrite work, spend money, publish something, or otherwise be hard to undo?",
+      "true": "It cannot easily be reversed.",
+      "false": "It is easy to reverse or has no lasting effect."
+    },
+    "content": {
+      "instructions": "Is `question` about how to write, word, format, name, structure or summarize something, or about how to generate code?",
+      "true": "The choice shapes the content or form of text or code being produced.",
+      "false": "The choice is about performing an action, configuring or running something, or the user's own situation."
+    },
+    "knowledgeCheck": {
+      "instructions": "Is `question` a quiz or exam question that tests the user's knowledge and has a correct answer?",
+      "true": "The question has a correct answer that the user is expected to work out.",
+      "false": "The question asks for the user's preference or decision, or for information only the user has."
+    }
+  }
+}
