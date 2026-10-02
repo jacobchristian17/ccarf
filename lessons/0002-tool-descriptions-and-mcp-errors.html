@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tool Descriptions and MCP Errors</title>
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+</head>
+<body>
+<main><article>
+
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Lesson 2 of 13 · Domain 2 (18%)</div>
+<h1>Tool descriptions and structured MCP errors</h1>
+<p class="subtitle">The description decides which tool gets called. The error decides what happens next.</p>
+
+<div class="meta">
+  <span><b>Task statements</b> 2.1 · 2.2</span>
+  <span><b>Time</b> ~12 min read · ~50 min build · ~12 min quiz</span>
+  <span><b>Scenario</b> 1, Customer Support Resolution Agent</span>
+</div>
+
+<details class="recall">
+  <summary>Warm-up: Lesson 1 retrieval, then a prediction</summary>
+  <div>From memory: (1) Where do <code>tool_result</code> blocks go relative to text in the user message? (2) Your loop forces <code>tool_choice</code> on every turn: what happens, and what's the fix?<br>
+  Then predict: when an MCP tool handler <em>throws</em>, what does the TypeScript SDK send back to the model? Write it down. Step 1 of the build shows you.</div>
+</details>
+
+<h2>1 · The description is the selection mechanism</h2>
+
+<p>Claude picks tools by reading their names, descriptions and schemas, which the API places in the system prompt.<span class="sn-ref"></span><span class="sidenote"><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools#tool-use-system-prompt">Define tools → Tool use system prompt</a>, Anthropic Docs.</span> The guide calls descriptions "the primary mechanism LLMs use for tool selection", and the docs call them "by far the most important factor in tool performance". The docs ask for <b>at least 3–4 sentences</b> per tool, covering:<span class="sn-ref"></span><span class="sidenote"><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools#best-practices-for-tool-definitions">Best practices for tool definitions</a>. Compare the good and poor <code>get_stock_price</code> examples there.</span></p>
+
+<ul>
+  <li><b>What it does</b>, and what it returns</li>
+  <li><b>When to use it</b>, and when <em>not</em> to, naming the similar tool to use instead</li>
+  <li><b>Input formats</b>, with examples (<code>'12345'</code>, with or without a <code>#</code>)</li>
+  <li><b>Edge cases and limits</b>, such as what it doesn't return or what an empty result means</li>
+</ul>
+
+<p>Write it the way you'd brief a new hire: make the implicit context explicit.<span class="sn-ref"></span><span class="sidenote"><a href="https://www.anthropic.com/engineering/writing-tools-for-agents">Writing effective tools for agents</a>, Anthropic Engineering: "small refinements to tool descriptions can yield dramatic improvements".</span></p>
+
+<h3>Four repairs the guide names</h3>
+<div class="table-wrap"><table>
+  <tr><th>Symptom</th><th>Repair (2.1 skill)</th></tr>
+  <tr><td>Minimal descriptions ("Retrieves order details") and similar inputs, so the agent picks the wrong one</td><td><b>Expand the descriptions</b>: inputs, example queries, edge cases, and the boundary with the sibling tool. This is the proportionate <em>first step</em> (sample Q2).</td></tr>
+  <tr><td>Two tools with near-identical descriptions (<code>analyze_content</code> vs <code>analyze_document</code>)</td><td><b>Rename and re-describe</b> to remove the overlap: <code>analyze_content</code> → <code>extract_web_results</code>, with a web-specific description.</td></tr>
+  <tr><td>One generic tool doing several jobs (<code>analyze_document</code>)</td><td><b>Split</b> it into purpose-specific tools with defined input/output contracts: <code>extract_data_points</code>, <code>summarize_content</code>, <code>verify_claim_against_source</code>.</td></tr>
+  <tr><td>Good descriptions, but the agent still misroutes on certain words</td><td><b>Review the system prompt</b> for keyword-sensitive instructions ("whenever the user says <em>order</em>…") that override the descriptions.</td></tr>
+</table></div>
+
+<div class="callout exam"><span class="label">Split vs consolidate: not a contradiction</span>
+<div class="vs">
+  <div><h4>Exam (2.1)</h4><b>Split</b> a generic tool whose jobs need <em>different contracts</em> (extract vs summarise vs verify). The problem was one tool with unclear purpose.</div>
+  <div><h4>Docs / eng blog</h4><b>Consolidate</b> thin API wrappers (<code>list_users</code> + <code>list_events</code> + <code>create_event</code> → <code>schedule_event</code>). The problem was many tools that serve one workflow.</div>
+</div>
+The common rule: <b>one tool per clear purpose</b>. In sample Q2, consolidating into <code>lookup_entity</code> is described as "valid" but more effort than a first step warrants.</div>
+
+<h2>2 · MCP has two error channels</h2>
+
+<p>The MCP spec separates failures by <em>who can fix them</em>:<span class="sn-ref"></span><span class="sidenote"><a href="https://modelcontextprotocol.io/specification/2026-07-28/server/tools#error-handling">MCP spec → Tools → Error Handling</a> (2026-07-28). "Clients <b>SHOULD</b> provide tool execution errors to language models to enable self-correction."</span></p>
+
+<div class="table-wrap"><table>
+  <tr><th>Channel</th><th>Examples</th><th>Wire format</th></tr>
+  <tr><td><b>Protocol error</b></td><td>Unknown tool, a malformed request, a server crash</td><td>JSON-RPC <code>error</code> (e.g. <code>-32602</code>). The model is unlikely to fix it.</td></tr>
+  <tr><td><b>Tool execution error</b></td><td>API failure, invalid input, a business rule violation</td><td>A normal <code>result</code> with <b><code>isError: true</code></b> and content the model can act on.</td></tr>
+</table></div>
+
+<p>Everything in 2.2 lives in the second channel. The MCP <code>isError</code> flag becomes the API's <code>is_error</code> on the <code>tool_result</code> you built in Lesson 1.</p>
+
+<h2>3 · The error contract</h2>
+
+<p>A bare <code>"Operation failed"</code> leaves the agent guessing. Should it retry? Ask the customer? Apologise? Escalate? The guide wants <b>structured metadata</b> so that the decision is explicit:</p>
+
+<pre>{
+  "errorCategory": "business",     <span class="c">// transient | validation | business | permission</span>
+  "isRetryable": false,            <span class="c">// stops wasted retries</span>
+  "message": "REFUND_LIMIT: refunds over $500 need human approval. Escalate.",  <span class="c">// for the agent</span>
+  "customerMessage": "Refunds over $500 need a quick review by our team…"        <span class="c">// safe to say aloud</span>
+}</pre>
+
+<div class="table-wrap"><table>
+  <tr><th>Category</th><th>Scenario 1 example</th><th>Retry?</th><th>Agent's next move</th></tr>
+  <tr><td>transient</td><td>orders-db timeout (504)</td><td>yes</td><td>Retry (bounded), then tell the customer it's temporary</td></tr>
+  <tr><td>validation</td><td>order id <code>"abc"</code>; refund larger than the total</td><td>not unchanged</td><td>Fix the input or ask the customer</td></tr>
+  <tr><td>business</td><td>refund over $500; outside the 30-day window</td><td>no</td><td>Relay <code>customerMessage</code>; escalate if the policy says to</td></tr>
+  <tr><td>permission</td><td>order belongs to another account</td><td>no</td><td>Reveal nothing; re-verify identity</td></tr>
+</table></div>
+
+<div class="callout key"><span class="label">Exam heuristic: an empty result is not an error</span>
+A lookup that <em>worked</em> and found nothing is a <b>success</b> (<code>{ order: null }</code>). If you flag it with <code>isError</code>, the agent retries pointlessly or tells the customer "our system is down". The guide calls this "access failures vs valid empty results". When you see it in a question, check that the distinction is kept.</div>
+
+<p>One more 2.2 skill, which Lesson 5 builds: a <b>subagent</b> should retry transient errors locally and pass up to the coordinator only what it couldn't resolve, along with its partial results and what it tried.</p>
+
+<h2>4 · Build: an MCP server with an error contract</h2>
+
+<p>Everything runs on your Claude Code login, so no API credits are needed. The data is in <code>lab/shared/store.ts</code>, the same Scenario 1 store with <b>typed</b> failures. Your server goes in <code>lab/02-mcp-tools/server.ts</code>. <code>get_customer</code> is done for you as a worked example; you write the rest.</p>
+
+<div class="callout warn"><span class="label">Commands (PowerShell, in lab/)</span>
+<pre>cd C:\Users\wsenr\repos\ccarf\lab
+npm run l2:check                                   <span class="c"># grader: 17 contract checks</span>
+npm run l2:ask -- "I am omar@example.com, where is order 99999?"   <span class="c"># real model via claude -p</span>
+$env:SERVER="solution"; npm run l2:ask -- "..."    <span class="c"># same prompt, reference server</span>
+Remove-Item Env:SERVER</pre>
+<code>l2:ask</code> gives the model <em>only</em> your three MCP tools (<code>--strict-mcp-config --tools ""</code>) and prints each call and result. Each run takes 15–40 s.</div>
+
+<ol class="steps">
+  <li><b>Baseline.</b> Run <code>npm run l2:check</code>. Expect only about 2 checks passing. Then run the <code>l2:ask</code> prompt above on the starter. Read the <em>customer-facing</em> reply: which internal details leak through (service names, HTTP codes, internal IDs)? This is the uniform-error problem as it looks in production.</li>
+  <li><b>TODO 1–2: the contract.</b> Implement <code>fail()</code> and <code>toToolError()</code>. Before you code, decide the category and retryability for each store error class. Write the <code>customerMessage</code> for the permission case so that it reveals nothing about the other account.</li>
+  <li><b>TODO 3: <code>lookup_order</code>.</b> Rewrite the one-line description to the <code>get_customer</code> standard. In the handler, strip the <code>#</code>, return a validation error for non-digits, return <code>{ order: null }</code> as a <em>success</em> when there's no such order, and map the timeout. Re-run the grader.</li>
+  <li><b>TODO 4: <code>process_refund</code>.</b> Register it from scratch. Its description must state the $500 limit and the 30-day window. Aim for all 17 checks green.</li>
+  <li><b>Same prompt, new server.</b> Re-run the step-1 <code>l2:ask</code> prompt. Compare the reply to the customer and the agent's retry behaviour with your step-1 notes.</li>
+  <li><b>Descriptions shape behaviour before the call.</b> Run <code>"Hi, I'm jane@example.com. Please refund order #12347, the standing desk."</code> (it's $899). <em>Predict</em>: does the agent call <code>process_refund</code> at all? Then answer: is a rule in the description enough for a financial limit? (Lesson 3's answer: no. It needs deterministic enforcement through a hook, and your server enforcing it is the last line of defence.)</li>
+  <li><b>Permission.</b> Run <code>"I'm omar@example.com. Refund $10 on order 12345."</code> Does the reply reveal anything about Jane's order?</li>
+  <li><b>Optional: the keyword trap.</b> <code>$env:SYSTEM='Whenever the customer uses the word "order", immediately call lookup_order.'</code> Then run <code>"I'm jane@example.com. I'd like to order another desk lamp. Is it in stock?"</code> When we tested it, Sonnet 5.5 <em>resisted</em> the bad instruction. Try <code>$env:MODEL="haiku"</code>. The exam assumes such instructions <em>can</em> override good descriptions, so the answer is still "review the system prompt".</li>
+</ol>
+
+<details class="recall">
+  <summary>Step 1: what the SDK does with a thrown error</summary>
+  <div>The TypeScript SDK catches it and returns <code>{ isError: true, content: [{ type: "text", text: "&lt;bare message&gt;" }] }</code>. So you get <code>isError</code> for free, but <b>no category, no retryability and no customer-safe text</b>. In our test run the agent passed <code>HTTP 504</code>, <code>orders-db</code> and the customer's internal ID straight to the customer. Zod schema failures and unknown tools come back the same way, as <code>MCP error -32602: …</code> text.</div>
+</details>
+<details class="recall">
+  <summary>Step 6: what we observed</summary>
+  <div>With the full description, the agent looked up Jane and the order, then <em>declined without calling</em> <code>process_refund</code>. It quoted the $500 rule from the description. Good descriptions prevent wasted calls, but that's still probabilistic compliance. For financial rules the exam answer is always deterministic enforcement (sample Q1, Lesson 3).</div>
+</details>
+<details class="recall">
+  <summary>Reference solution</summary>
+  <div><code>lab/02-mcp-tools/solution/server.ts</code>, graded with <code>npm run l2:check:solution</code>. Note that unknown errors map to <code>isRetryable: false</code>: never <em>guess</em> that an error is retryable.</div>
+</details>
+
+<h2>5 · Scenario check</h2>
+<p>Seven new items, then two spaced-review items from Lesson 1. Commit to an answer before you click.</p>
+
+<section class="quiz" data-quiz="0002-tools-and-errors">
+
+  <div class="item" data-ts="2.1">
+    <div class="stem">A research agent has <code>analyze_content</code> and <code>analyze_document</code>, with near-identical descriptions. Logs show it often calls <code>analyze_content</code> on uploaded PDFs, which only <code>analyze_document</code> parses correctly. What is the most effective first step?</div>
+    <ol class="opts">
+      <li>Add a routing classifier that inspects inputs and preselects the right tool</li>
+      <li>Merge both into one analyze tool that detects the input type internally</li>
+      <li data-correct>Rename analyze_content to extract_web_results with a web-only description</li>
+      <li>Add eight few-shot examples of PDF requests to the system prompt instead</li>
+    </ol>
+    <div class="explain">The root cause is overlapping descriptions. The guide's named skill is renaming and re-describing to remove functional overlap. A is over-engineered and bypasses the model's understanding. B is a bigger architectural change than a first step warrants. D adds tokens without fixing the overlapping definitions.</div>
+  </div>
+
+  <div class="item" data-ts="2.1">
+    <div class="stem">A single <code>analyze_document</code> tool is used for extracting figures, summarising, and checking whether a claim is supported. Outputs vary unpredictably and downstream code keeps breaking. What redesign does the guide recommend?</div>
+    <ol class="opts">
+      <li>Add a mode parameter and document every mode in a longer description</li>
+      <li data-correct>Split it into purpose-specific tools, each with its own input/output contract</li>
+      <li>Keep the one tool and validate its free-form output with a stricter parser</li>
+      <li>Force the tool with tool_choice so it is called the same way every time</li>
+    </ol>
+    <div class="explain">Splitting a generic tool into <code>extract_data_points</code>, <code>summarize_content</code> and <code>verify_claim_against_source</code> gives each job a defined contract, which fixes both selection and output shape. A keeps one ambiguous contract. C treats the symptom. D doesn't change what the tool returns.</div>
+  </div>
+
+  <div class="item" data-ts="2.1">
+    <div class="stem">Your tools have detailed, well-separated descriptions. Yet whenever a customer mentions their "account", the agent calls <code>get_customer</code> even when they gave an order number and asked about shipping. What should you check first?</div>
+    <ol class="opts">
+      <li>Whether get_customer's description is too long for the model to read fully</li>
+      <li>Whether too many tools are configured on the agent for it to choose between</li>
+      <li data-correct>Whether the system prompt has a keyword rule tying "account" to that tool</li>
+      <li>Whether tool_choice is set to auto instead of forcing the lookup_order tool</li>
+    </ol>
+    <div class="explain">When good descriptions still misroute on a particular word, the guide points to keyword-sensitive system prompt instructions that override them. With three tools, B isn't the issue. D would break every non-order turn.</div>
+  </div>
+
+  <div class="item" data-ts="2.2">
+    <div class="stem">On a refund that breaks the 30-day policy, <code>process_refund</code> returns <code>isError: true</code> with the text "Operation failed". The agent retries three times, then tells the customer the system is down. What fixes this at the source?</div>
+    <ol class="opts">
+      <li>Lower the retry limit in the system prompt from three attempts down to one</li>
+      <li data-correct>Return errorCategory business, isRetryable false, and a customer message</li>
+      <li>Throw an exception so the SDK reports the failure as a protocol-level error</li>
+      <li>Return a success result with an empty body so the agent stops trying again</li>
+    </ol>
+    <div class="explain">A uniform error hides the reason, so the agent guesses "transient". Structured metadata tells it not to retry and gives it something accurate to say. A treats the symptom. C makes things worse, because protocol errors are the channel the model is <em>least</em> able to use. D hides a real failure.</div>
+  </div>
+
+  <div class="item" data-ts="2.2">
+    <div class="stem">A <code>search_orders</code> tool returns <code>isError: true, "not found"</code> when a customer has no orders in the date range. The agent then retries and apologises for a "temporary outage". What is the correct change?</div>
+    <ol class="opts">
+      <li>Mark the not-found error as retryable false so the agent stops after one try</li>
+      <li>Add a system prompt rule saying not-found errors are never outages to report</li>
+      <li>Return a transient errorCategory so the agent can handle it with backoff retry</li>
+      <li data-correct>Return a successful result with an empty list, since the query really worked</li>
+    </ol>
+    <div class="explain">The query worked and found nothing. That's a valid empty result, not an access failure. Making it an error, however well labelled (A, C), still tells the agent something went wrong. B patches the prompt instead of fixing the tool's contract.</div>
+  </div>
+
+  <div class="item" data-ts="2.2">
+    <div class="stem">Which <b>two</b> fields does the guide name as structured error metadata that lets an agent make recovery decisions? (Select 2)</div>
+    <ol class="opts">
+      <li data-correct>errorCategory: transient, validation, business or permission</li>
+      <li>stackTrace: the full server-side stack trace for later debugging</li>
+      <li data-correct>isRetryable: a boolean saying whether a retry could succeed</li>
+      <li>httpStatus: the raw upstream status code returned by the service</li>
+      <li>dbHost: the internal database host that produced the failure</li>
+    </ol>
+    <div class="explain"><code>errorCategory</code> and <code>isRetryable</code>, plus a human-readable description, are the guide's metadata. Stack traces, raw status codes and hostnames are the "opaque error codes or tracebacks" that the engineering blog says to avoid. In the lab they also leaked to the customer.</div>
+  </div>
+
+  <div class="item" data-ts="2.2">
+    <div class="stem">Your MCP flight tool receives a departure date in the past. How should the server report this so the model has the best chance to self-correct?</div>
+    <ol class="opts">
+      <li>As a JSON-RPC protocol error with code -32602 and an invalid-params message</li>
+      <li data-correct>As a tool result with isError true and text explaining the valid date range</li>
+      <li>As a successful result whose text quietly mentions that the date was ignored</li>
+      <li>As a dropped connection, so the client times out and retries automatically</li>
+    </ol>
+    <div class="explain">The MCP spec lists input validation errors as <em>tool execution errors</em>, reported with <code>isError: true</code> and actionable text. Protocol errors (A) are for unknown tools and malformed requests, and the spec says the model is less likely to recover from them. C hides the failure; D is worse.</div>
+  </div>
+
+  <div class="item" data-ts="1.1 · review">
+    <div class="stem">A teammate's loop ends when the reply contains "Final answer:". After a prompt rewrite, Claude stops writing that phrase and every run hits the 25-turn cap. What is the correct fix?</div>
+    <ol class="opts">
+      <li>Add the phrase back into the system prompt as a required closing marker</li>
+      <li>Raise the cap to 50 turns so that long tasks have room to finish properly</li>
+      <li data-correct>End the loop when stop_reason is end_turn and keep the cap as a backstop</li>
+      <li>End the loop at the first response that contains any text block at all</li>
+    </ol>
+    <div class="explain">Parsing natural language is an anti-pattern, and so is a cap as the primary stop. <code>stop_reason</code> is the protocol signal. D is the third anti-pattern: text alongside <code>tool_use</code> doesn't mean done.</div>
+  </div>
+
+  <div class="item" data-ts="2.3 · review">
+    <div class="stem">You want Claude to write a one-line explanation to the user <em>and</em> call <code>lookup_order</code> in the same turn. Which configuration does that?</div>
+    <ol class="opts">
+      <li>tool_choice any, with an instruction to explain the reasoning first</li>
+      <li data-correct>tool_choice auto, with the user message asking it to use lookup_order</li>
+      <li>tool_choice forced to lookup_order, with disable_parallel_tool_use</li>
+      <li>tool_choice none for one turn, then forced to lookup_order the next</li>
+    </ol>
+    <div class="explain">Under <code>any</code> or forced <code>tool</code>, the API prefills the turn, so no text comes before the <code>tool_use</code>. The docs' recommendation is <code>auto</code> plus an explicit request in the user message. D spends two turns and is still forced on the second.</div>
+  </div>
+
+</section>
+
+<div class="source"><span class="label">Primary source · read this next</span>
+<p style="margin:.3rem 0 0"><a href="https://www.anthropic.com/engineering/writing-tools-for-agents"><b>Writing effective tools for AI agents</b></a> (Anthropic Engineering). Read the sections on namespacing, returning meaningful context, and prompt-engineering descriptions. Then read the <a href="https://modelcontextprotocol.io/specification/2026-07-28/server/tools#error-handling">MCP spec's Error Handling section</a>, which is short and is the source for §2. Cheat sheet: <a href="../reference/tool-design-and-errors.html">reference/tool-design-and-errors</a>.</p>
+</div>
+
+<p class="ask">Stuck on a TODO, unsure which category an error belongs in, or think a quiz explanation is wrong? Ask me. When you finish, paste your <code>l2:check</code> score and quiz summary line, and tell me what leaked in step 1 and what happened in step 6.</p>
+
+<div class="nav-lessons"><a href="0001-the-agentic-loop.html">← Lesson 1 · The agentic loop</a><span>Next: Lesson 3 · Hooks, prerequisites and escalation →</span></div>
+
+</article></main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

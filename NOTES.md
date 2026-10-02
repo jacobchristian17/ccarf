@@ -32,4 +32,9 @@
 | 13 | Weak-area drill + mock exam 2 | weakest | — |
 
 ## Progress
-- [ ] 1  - [ ] 2  - [ ] 3  - [ ] 4  - [ ] 5  - [ ] 6  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10  - [ ] 11  - [ ] 12  - [ ] 13
+- [x] 1  - [ ] 2  - [ ] 3  - [ ] 4  - [ ] 5  - [ ] 6  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10  - [ ] 11  - [ ] 12  - [ ] 13
+
+## Working notes
+- 2026-10-02: the user declared Lesson 1 done without reporting steps 5–8 or the quiz score. They prefer momentum; carry retrieval forward instead of gating on it.
+- Labs run on the Claude Code login: Lesson 2+ uses `claude -p --mcp-config … --strict-mcp-config --tools ""` (see `lab/02-mcp-tools/ask.ts`). On Windows, spawn `claude` without `shell: true`, or the prompt gets split on spaces.
+- Every lab has a deterministic grader (`npm run lN:check`) for a tight feedback loop, plus `lN:ask` for real-model observation.

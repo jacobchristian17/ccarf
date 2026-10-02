@@ -3,8 +3,9 @@
 // Env:  MODEL=claude-opus-5-5 (default)   TOOL_CHOICE=auto | any | none | tool:<name>
 import Anthropic from "@anthropic-ai/sdk";
 import { tools, executeTool } from "../shared/backend.js";
+import { createClient } from "../shared/client.js";
 
-const client = new Anthropic();
+const client = createClient(); // real API if ANTHROPIC_API_KEY is set, otherwise the offline mock
 const MODEL = process.env.MODEL ?? "claude-opus-5-5";
 const MAX_ITERATIONS = 10; // a safety backstop, NOT the stopping mechanism
 
@@ -38,18 +39,45 @@ export async function runAgent(userInput: string): Promise<string> {
     logTurn(i, res);
 
     // TODO 1 — Branch on res.stop_reason (NOT on whether text is present):
-    //   "end_turn"  → return the final text.
-    //   "tool_use"  → continue below.
-    //   anything else (max_tokens, refusal, pause_turn, …) → handle explicitly; don't silently loop.
+    if (res.stop_reason === "end_turn") {
+      return res.content.filter(b => b.type === "text").map(b => (b as Anthropic.TextBlockParam).text).join(" ");
+    } else if (res.stop_reason === "tool_use") {
+      // TODO 2 — Append the assistant turn to history. Push res.content AS-IS
+      //          (it may contain thinking blocks you must not drop or edit).
+      messages.push({ role: "assistant", content: res.content });
 
-    // TODO 2 — Append the assistant turn to history. Push res.content AS-IS
-    //          (it may contain thinking blocks you must not drop or edit).
 
-    // TODO 3 — Execute EVERY tool_use block in res.content (there may be several: parallel calls).
-    //          Build one tool_result per tool_use: { type, tool_use_id, content, is_error? }.
-    //          If executeTool throws, still return a tool_result, with is_error: true and the message.
+      // TODO 3 — Execute EVERY tool_use block in res.content (there may be several: parallel calls).
+      //          Build one tool_result per tool_use: { type, tool_use_id, content, is_error? }.
+      //          If executeTool throws, still return a tool_result, with is_error: true and the message.
+      const results: Anthropic.ToolResultBlockParam[] = [];
+      for (const block of res.content) {
+        if (block.type === "tool_use") {
+          try {
+            const result = executeTool(block.name, block.input);
+            results.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              content: JSON.stringify(result)
+            });
+          } catch (error) {
+            results.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              is_error: true,
+              content: String(error)
+            })
+          }
+        }
+      }
 
-    // TODO 4 — Append ONE user message containing ALL the tool_results (tool_results first, no text before them).
+      // TODO 4 — Append ONE user message containing ALL the tool_results (tool_results first, no text before them).
+      messages.push({ role: "user", content: results });
+    } else {
+      throw new Error(`Unexpected stop_reason=${res.stop_reason}; investigate, don't just raise the cap`);
+    }
+
+    
   }
   throw new Error(`Gave up after ${MAX_ITERATIONS} iterations; investigate, don't just raise the cap`);
 }

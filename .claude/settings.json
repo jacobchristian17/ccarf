@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "--experimental-strip-types",
+              "--disable-warning=ExperimentalWarning",
+              "${CLAUDE_PROJECT_DIR}/lab/jev-select/jev-select.ts",
+              "record"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "--experimental-strip-types",
+              "--disable-warning=ExperimentalWarning",
+              "${CLAUDE_PROJECT_DIR}/lab/jev-select/jev-select.ts",
+              "ask"
+            ],
+            "timeout": 20,
+            "statusMessage": "Jev is weighing the options..."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,8 +1,9 @@
 // Reference solution for the Lesson 1 lab. Try the TODOs yourself first.
 import Anthropic from "@anthropic-ai/sdk";
 import { tools, executeTool } from "../../shared/backend.js";
+import { createClient } from "../../shared/client.js";
 
-const client = new Anthropic();
+const client = createClient();
 const MODEL = process.env.MODEL ?? "claude-opus-5-5";
 const MAX_ITERATIONS = 10; // safety backstop only
 

@@ -7,6 +7,7 @@
   "recentPrompts": 3,
   "maxCharsPerPrompt": 1500,
   "markStyle": "dialog",
+  "skipBareLabels": true,
   "thresholds": {
     "decides": 0.5,
     "confidence": 0.75,
@@ -15,14 +16,14 @@
     "undoPick": 0.3,
     "irreversibleAny": 0.7,
     "content": 0.5,
-    "knowledgeCheck": 0.5
+    "knowledgeCheck": 0.7
   },
   "whenNotDecided": {
     "irreversible": "mark",
     "content": "pick",
     "other": "mark"
   },
-  "skipQuestionPatterns": ["\\b(quiz|exam|mock test|practice question|knowledge check)\\b"],
+  "skipQuestionPatterns": ["\\b(quiz|exam|mock test|practice question|knowledge check)\\b", "^\\s*(q|question|scenario)\\s*\\d+\\b"],
   "disabledPaths": [],
   "wording": {
     "pick": "Which option best fits what the user has asked for in `conversation`, as an answer to `question`?",
@@ -37,7 +38,7 @@
       "false": "None of the options does what the user asked for."
     },
     "undo": {
-      "instructions": "Would carrying out `options[{i}]` delete data, overwrite work, spend money, publish something, or otherwise be hard to undo?",
+      "instructions": "If the answer to `question` is `options[{i}]`, would carrying that out delete data, overwrite work, spend money, publish something, or otherwise be hard to undo?",
       "true": "It cannot easily be reversed.",
       "false": "It is easy to reverse or has no lasting effect."
     },
@@ -47,9 +48,9 @@
       "false": "The choice is about performing an action, configuring or running something, or the user's own situation."
     },
     "knowledgeCheck": {
-      "instructions": "Is `question` a quiz or exam question that tests the user's knowledge and has a correct answer?",
-      "true": "The question has a correct answer that the user is expected to work out.",
-      "false": "The question asks for the user's preference or decision, or for information only the user has."
+      "instructions": "Does `question` ask which answer is technically correct or best for a described scenario, like an exam question, rather than asking what someone wants or prefers?",
+      "true": "It asks for the correct or best answer to a described scenario, as an exam question does.",
+      "false": "It asks what someone wants, prefers or should do in their own work."
     }
   }
 }

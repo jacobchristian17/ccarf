@@ -4,11 +4,16 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "l1": "tsx 01-agentic-loop/loop.ts",
-    "l1:solution": "tsx 01-agentic-loop/solution/loop.ts"
+    "l1": "tsx --env-file-if-exists=.env 01-agentic-loop/loop.ts",
+    "l1:solution": "tsx --env-file-if-exists=.env 01-agentic-loop/solution/loop.ts",
+    "l2:check": "tsx 02-mcp-tools/check.ts server.ts",
+    "l2:check:solution": "tsx 02-mcp-tools/check.ts solution/server.ts",
+    "l2:ask": "tsx 02-mcp-tools/ask.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.131.0"
+    "@anthropic-ai/sdk": "^0.131.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

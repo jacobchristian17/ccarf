@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tool Design Reference</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main><article>
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Reference · TS 2.1, 2.2</div>
+<h1>Tool descriptions &amp; MCP error contract</h1>
+<p class="subtitle">One-page cheat sheet. Taught in <a href="../lessons/0002-tool-descriptions-and-mcp-errors.html">Lesson 2</a>.</p>
+
+<h2>Description checklist (≥ 3–4 sentences)</h2>
+<ul>
+  <li><b>Does</b>: what it does and what it returns (its shape)</li>
+  <li><b>When</b>: when to use it, and when <em>not</em> to, naming the sibling tool</li>
+  <li><b>Input</b>: formats with examples (<code>'12345'</code>, a <code>#</code> is ok)</li>
+  <li><b>Edges</b>: limits, what it doesn't return, what "empty" means, the business rules</li>
+</ul>
+
+<h2>Selection problems → first step</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td>Minimal descriptions, wrong tool picked</td><td>Expand the descriptions (sample Q2). <em>Not</em> a routing layer, few-shot, or a merge.</td></tr>
+  <tr><td>Near-identical descriptions</td><td>Rename and re-describe: <code>analyze_content</code> → <code>extract_web_results</code></td></tr>
+  <tr><td>One generic tool, many jobs</td><td>Split by purpose: <code>extract_data_points</code> / <code>summarize_content</code> / <code>verify_claim_against_source</code></td></tr>
+  <tr><td>Misroutes on certain words</td><td>Review the system prompt for keyword-sensitive instructions</td></tr>
+  <tr><td>Many thin API wrappers (docs)</td><td>Consolidate into workflow tools. Rule: one tool per clear purpose</td></tr>
+</table>
+
+<h2>MCP: two error channels</h2>
+<table>
+  <tr><th>Channel</th><th>For</th><th>Format</th></tr>
+  <tr><td>Protocol error</td><td>Unknown tool, malformed request, server error</td><td>JSON-RPC <code>error</code>, e.g. <code>-32602</code></td></tr>
+  <tr><td>Tool execution error</td><td>API failure, invalid input, business rule</td><td><code>result</code> with <code>isError: true</code> and actionable text</td></tr>
+</table>
+<p>The TS SDK turns a thrown handler error into <code>isError: true</code> with only the bare message. That's the uniform error: no category, no retry hint.</p>
+
+<h2>Error contract</h2>
+<pre>{ errorCategory: "transient" | "validation" | "business" | "permission",
+  isRetryable: boolean,
+  message: string,           <span class="c">// for the agent: what happened and what to do</span>
+  customerMessage?: string } <span class="c">// business/permission: safe to say aloud</span></pre>
+<table>
+  <tr><th>Category</th><th>Example</th><th>Retry</th><th>Agent does</th></tr>
+  <tr><td>transient</td><td>timeout, 503/504</td><td>yes, bounded</td><td>retry, then say it's temporary</td></tr>
+  <tr><td>validation</td><td>bad id, amount &gt; total</td><td>not unchanged</td><td>fix the input or ask the customer</td></tr>
+  <tr><td>business</td><td>over limit, outside window</td><td>no</td><td>relay customerMessage, escalate if policy says</td></tr>
+  <tr><td>permission</td><td>someone else's order</td><td>no</td><td>reveal nothing, re-verify identity</td></tr>
+  <tr><td>unknown</td><td>anything unmapped</td><td>no</td><td>never <em>guess</em> it's retryable; escalate</td></tr>
+</table>
+<p><b>Empty ≠ error.</b> A query that worked and found nothing returns <b>success</b> (<code>{order: null}</code>, <code>[]</code>). An access failure returns <code>isError</code>.</p>
+<p><b>Subagents</b> (preview of L5): retry transient errors locally, and pass up only what's unresolved, with partial results and what was attempted.</p>
+
+<h2>MCP server skeleton (TypeScript)</h2>
+<pre>import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+
+const server = new McpServer({ name: "support", version: "1.0.0" });
+server.registerTool("lookup_order", {
+  description: "Fetch ONE order by order number… Do not use for identity: use get_customer…",
+  inputSchema: { order_id: z.string().describe("Digits only, e.g. '12345'") },
+}, async ({ order_id }) =&gt; {
+  try { return { content: [{ type: "text", text: JSON.stringify({ order: getOrder(order_id) }) }] }; }
+  catch (e) { return { isError: true, content: [{ type: "text", text: JSON.stringify(toToolError(e)) }] }; }
+});
+await server.connect(new StdioServerTransport());</pre>
+
+<h2>Exam reflexes</h2>
+<ul>
+  <li>Misrouting plus minimal descriptions → <b>better descriptions first</b></li>
+  <li>"Operation failed" plus wasted retries → <b>structured category + isRetryable</b></li>
+  <li>"Not found" treated as an outage → <b>an empty result is a success</b></li>
+  <li>Financial rule only in a description → <b>still needs deterministic enforcement</b> (L3)</li>
+</ul>
+</article></main>
+</body>
+</html>
