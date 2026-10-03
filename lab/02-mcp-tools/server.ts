@@ -24,7 +24,10 @@ const ok = (data: unknown): CallToolResult => ({ content: [{ type: "text", text:
 // TODO 1 — Return an MCP tool-execution error: isError: true, with the ToolError as JSON text content.
 //          (Protocol errors such as "unknown tool" are a different mechanism; you don't produce those.)
 function fail(err: ToolError): CallToolResult {
-  throw new Error("TODO 1");
+  return {
+    isError: true,
+    content: [{ type: "text", text: JSON.stringify(err) }]
+  }
 }
 
 // TODO 2 — Map each store error class to the contract. Decide category and retryability yourself:
@@ -32,7 +35,38 @@ function fail(err: ToolError): CallToolResult {
 //          Business and permission errors need a customerMessage. The permission one must not
 //          reveal whose order it is. Unknown errors: don't claim they're retryable.
 function toToolError(e: unknown): ToolError {
-  throw e; // ← replace. Right now, the SDK catches this and sends a bare message with no metadata.
+  // throw e; // ← replace. Right now, the SDK catches this and sends a bare message with no metadata.
+
+  if (e instanceof UpstreamTimeoutError)
+    return {
+      errorCategory: "transient",
+      message: `${e.message}. Retry once; if it fails again, tell the customer the system is temporarily unavailable.`,
+      isRetryable: true,
+    }
+  if (e instanceof InvalidInputError)
+    return {
+      errorCategory: "validation",
+      message: "The input doesnt match with the schema. Check the format and retry; if it fails ask the customer to provide the correct fields for the tool",
+      isRetryable: true,
+    }
+  if (e instanceof PolicyError)
+    return {
+      errorCategory: "business",
+      message: "The action violates business policy rules. Inform the customer in a warm, friendly tone that this request is not allowed by policy",
+      isRetryable: false,
+      customerMessage: "This request is not allowed. Kindly check with the management"
+    }
+  if (e instanceof NotOwnerError)
+    return {
+      errorCategory: "permission",
+      message: "Invalid authentication, requesting entity doesn't have access to the resource",
+      isRetryable: false,
+    }
+  return {
+    errorCategory: "permission",
+    isRetryable: false,
+    message: "Unhandled error",
+  }
 }
 
 const server = new McpServer({ name: "support", version: "1.0.0" });
@@ -61,17 +95,38 @@ server.registerTool("get_customer", {
 //            '#12345' must work · 'abc' → validation error · no such order → SUCCESS with order: null
 //            DB timeout (order 99999) → transient, retryable
 server.registerTool("lookup_order", {
-  description: "Retrieves order details.",
+  description:
+    "Search for orders using the provided order_id. Returns the matching order object" +
+    "{order: Order | null}. If nothing is found, return null instead.  " +
+    "Use this after get_customer to fetch for the order details. " +
+    "The input order_id can accept '#' and 0-9 characters only, and parse it to get the order number (e.g. #123, 123)." +
+    "If the order_id contains other characters than accepted, return a validation error (e.g. abc, #12a3" +
+    "If the DB call times out, return a transient error and retry once",
   inputSchema: {
     order_id: z.string(),
   },
 }, async ({ order_id }) => {
-  return ok({ order: getOrder(order_id) });
+  const id = order_id.replace(/^#/, "").trim();
+  if (!/^\d+$/.test(id)) return fail({ errorCategory: "validation", isRetryable: false, message: "Clarify with the user about the exact order_id they are looking for" });
+  try {
+    const order = getOrder(id);
+    return ok({ order });
+  } catch (error) {
+    return fail(toToolError(error))
+  }
 });
 
 // TODO 4 — Register process_refund(customer_id, order_id, amount) from scratch.
 //          Call refund() from the store and map its failures with toToolError().
 //          Its description must put the business rules (AUTO_REFUND_LIMIT, REFUND_WINDOW_DAYS)
 //          in front of the agent BEFORE it calls.
+server.registerTool("process_refund", {
+  description:
+    "process the refund",
+  inputSchema: {
+    customer_id: z.string().describe("Exact customer_id"),
+    
+  }
+})
 
 await server.connect(new StdioServerTransport());
