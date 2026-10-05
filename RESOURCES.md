@@ -60,6 +60,8 @@ Verified 2026-10-01: every URL below returned HTTP 200 (after redirects) and its
   `agents` parameter and `AgentDefinition` fields (description, prompt, tools, model …). Subagents are invoked through the **Agent** tool (formerly Task). Use for: 1.2, 1.3, 2.3.
 - [Hooks — Claude Code Docs](https://code.claude.com/docs/en/agent-sdk/hooks)
   PreToolUse/PostToolUse callbacks, `HookMatcher`, `permissionDecision: "deny"`. Use for: 1.4, 1.5.
+- [Hooks reference — Claude Code Docs](https://code.claude.com/docs/en/hooks)
+  Full JSON input/output schema for every hook event, matcher patterns, and shell-command hooks in settings files. The SDK callbacks use the same output format. Use for: 1.5, and 3.x if hooks appear in team config.
 - [Permissions — Claude Code Docs](https://code.claude.com/docs/en/agent-sdk/permissions)
   `allowed_tools`/`disallowed_tools` (TS: `allowedTools`/`disallowedTools`), permission modes, evaluation order. Use for: 1.3, 1.5, 2.3.
 - [Sessions — Claude Code Docs](https://code.claude.com/docs/en/agent-sdk/sessions)

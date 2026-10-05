@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hooks and Escalation Reference</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main><article>
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Reference · TS 1.4, 1.5, 5.2</div>
+<h1>Hooks, gates &amp; escalation</h1>
+<p class="subtitle">One-page cheat sheet. Taught in <a href="../lessons/0003-hooks-prerequisites-and-escalation.html">Lesson 3</a>.</p>
+
+<h2>Hook or prompt?</h2>
+<table>
+  <tr><th>Hook / prerequisite gate</th><th>Prompt (criteria + few-shot)</th></tr>
+  <tr><td>Financial, identity or compliance rule; "must never happen"</td><td>Judgement: when to escalate, tone, ordering of concerns</td></tr>
+  <tr><td>Code can evaluate it from tool name + inputs + state</td><td>Needs reading the conversation</td></tr>
+  <tr><td>Sample Q1: agent skips get_customer 12% → <b>gate</b></td><td>Sample Q3: escalation miscalibrated → <b>explicit criteria + few-shot</b></td></tr>
+</table>
+<p>Distractors: stronger wording, more few-shot for a <em>guarantee</em>; self-reported confidence; sentiment thresholds; a separate classifier before prompts are fixed.</p>
+
+<h2>Agent SDK hooks (TypeScript)</h2>
+<table>
+  <tr><th>Event</th><th>Return in <code>hookSpecificOutput</code></th><th>Use</th></tr>
+  <tr><td>PreToolUse</td><td><code>permissionDecision: "deny"</code>, <code>permissionDecisionReason</code> · or <code>updatedInput</code></td><td>Block / redirect; prerequisite gate</td></tr>
+  <tr><td>PostToolUse</td><td><code>updatedToolOutput</code> (replace) · <code>additionalContext</code> (append)</td><td>Normalise formats; redact; record state</td></tr>
+</table>
+<pre>query({ prompt, options: { mcpServers: { support: server }, allowedTools: ["mcp__support__*"],
+  hooks: { PreToolUse: [{ matcher: "^mcp__support__process_refund$", hooks: [cb] }] } } })
+cb = async (input, toolUseID, { signal }) =&gt; ({ hookSpecificOutput: {
+  hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "… call escalate_to_human" } })</pre>
+<ul>
+  <li>Matcher = regex on the tool name. MCP: <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>. No matcher = every tool.</li>
+  <li>Deny reason reaches the model as an <code>is_error</code> tool_result → write it as a <b>redirect</b>.</li>
+  <li>Matching hooks run in parallel; any <code>deny</code> wins. PreToolUse timeout → the tool doesn't run.</li>
+  <li>MCP <code>tool_response</code> = content array <code>[{type:"text",text}]</code>. <code>updatedMCPToolOutput</code> is deprecated.</li>
+  <li>Return <code>{}</code> to allow / leave unchanged.</li>
+</ul>
+
+<h2>Prerequisite gate pattern</h2>
+<ol>
+  <li>PostToolUse(<code>get_customer</code>): exactly one match → <code>state.verifiedId</code>; else <code>null</code> (+ "ask for email" if &gt;1)</li>
+  <li>PreToolUse(order/refund tools): no <code>verifiedId</code> → deny "call get_customer first"; refund <code>customer_id ≠ verifiedId</code> → deny</li>
+  <li>State is per session. Server-side rules stay as defence in depth.</li>
+</ol>
+
+<h2>Escalation (5.2)</h2>
+<table>
+  <tr><th>Trigger</th><th>Move</th></tr>
+  <tr><td>Explicit request for a human</td><td>Escalate <b>immediately</b>, no investigation first</td></tr>
+  <tr><td>Policy ambiguous / silent (competitor price match)</td><td>Escalate; don't invent policy</td></tr>
+  <tr><td>No meaningful progress possible</td><td>Escalate with what was tried</td></tr>
+  <tr><td>Frustrated, but straightforward issue</td><td>Acknowledge → offer to resolve → escalate only if they reiterate</td></tr>
+  <tr><td>Multiple customer matches</td><td>Ask for another identifier; never pick by heuristic</td></tr>
+</table>
+<p><b>Not reliable:</b> sentiment, self-reported confidence. <b>Handoff</b> (human lacks transcript): customer ID · root cause · refund amount · recommended action (+ actions taken). Enforce the shape with the escalation tool's schema.</p>
+<p><b>Multi-concern:</b> decompose into items → investigate each (parallel, shared context) → one unified reply.</p>
+</article></main>
+</body>
+</html>

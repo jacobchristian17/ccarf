@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hooks and Escalation</title>
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+</head>
+<body>
+<main><article>
+
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Lesson 3 of 13 · Domains 1 (27%) and 5 (15%)</div>
+<h1>Hooks, prerequisites and escalation</h1>
+<p class="subtitle">Rules that must hold go in code. Judgement calls go in the prompt.</p>
+
+<div class="meta">
+  <span><b>Task statements</b> 1.4 · 1.5 · 5.2</span>
+  <span><b>Time</b> ~12 min read · ~55 min build · ~12 min quiz</span>
+  <span><b>Scenario</b> 1, Customer Support Resolution Agent · Exercise 1</span>
+</div>
+
+<details class="recall">
+  <summary>Warm-up: Lesson 2 retrieval, then a prediction</summary>
+  <div>From memory: (1) A lookup finds no matching order. Is that <code>isError</code>? Why or why not? (2) Which two metadata fields let an agent decide whether to retry?<br>
+  Then predict: your <code>process_refund</code> description says "max $500". A customer asks Sonnet 5.5 for an $899 refund. With <b>no hooks</b>, does it call <code>process_refund</code>? What about Haiku with a one-line description? §6 has what we saw.</div>
+</details>
+
+<h2>1 · Prompts are probabilistic; hooks are deterministic</h2>
+
+<p>Sample Q1 in the guide describes an agent that skips <code>get_customer</code> in 12% of cases. The answer is a <b>programmatic prerequisite</b>, not a stronger prompt or more few-shot examples. In the guide's words: "when deterministic compliance is required (e.g., identity verification before financial operations), prompt instructions alone have a <b>non-zero failure rate</b>."<span class="sn-ref"></span><span class="sidenote">Exam guide, task statement 1.4 and sample question 1 (<code>md/CCAR-F/sections/07</code>, <code>14</code>).</span></p>
+
+<div class="table-wrap"><table>
+  <tr><th>Put it in a <b>hook / gate</b> when…</th><th>Put it in the <b>prompt</b> when…</th></tr>
+  <tr><td>Breaking it costs money, breaks compliance, or can't be undone: refunds over a limit, actions before identity is verified, PII disclosure</td><td>It's a judgement call that needs context: when to escalate, how to phrase an apology, which concern to address first</td></tr>
+  <tr><td>A <b>program can evaluate it</b> from the tool name, the inputs and the state (<code>amount &gt; 500</code>, <code>verifiedCustomerId == null</code>)</td><td>Evaluating it requires reading the conversation (is this customer asking for a human, or just venting?)</td></tr>
+  <tr><td>"Must never happen" (a guarantee)</td><td>"Should usually happen" (calibration)</td></tr>
+</table></div>
+
+<div class="callout key"><span class="label">Exam heuristic</span>
+Financial, identity or compliance rule plus "the agent sometimes skips it" → <b>hook or prerequisite gate</b>. Any answer that only rewords the prompt, adds few-shot examples, or asks the model for a confidence score is the probabilistic distractor. The reverse also holds: escalation <em>calibration</em> (sample Q3) → explicit criteria plus few-shot <b>in the prompt</b>, not a classifier.</div>
+
+<h2>2 · Agent SDK hooks in 90 seconds</h2>
+
+<p>A hook is a callback your process runs at a fixed point in the agent loop. You register it under an event, with a <code>matcher</code> regex tested against the tool name. MCP tools are named <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>.<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/agent-sdk/hooks">Intercept and control agent behavior with hooks</a>, Claude Code Docs. Read "Outputs" and "Matchers".</span></p>
+
+<div class="table-wrap"><table>
+  <tr><th>Event</th><th>Fires</th><th>Return inside <code>hookSpecificOutput</code></th><th>Task statement use</th></tr>
+  <tr><td><b>PreToolUse</b></td><td>before the tool runs</td><td><code>permissionDecision: "deny"</code> + <code>permissionDecisionReason</code>; or <code>updatedInput</code></td><td>Block refunds over $500; prerequisite gates</td></tr>
+  <tr><td><b>PostToolUse</b></td><td>after it returns, before the model reads the result</td><td><code>updatedToolOutput</code> (replace) or <code>additionalContext</code> (append)</td><td>Normalise timestamps and status codes; redact</td></tr>
+</table></div>
+
+<pre>PreToolUse: [{ matcher: "^mcp__support__process_refund$", hooks: [enforceRefundLimit] }]
+
+<span class="c">// deny → the model receives an is_error tool_result containing your reason</span>
+return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny",
+  permissionDecisionReason: "Refunds over $500 need approval. Call escalate_to_human with …" } };</pre>
+
+<ul>
+  <li><b>The reason is a redirect.</b> The model reads it, so tell it what to do next ("call <code>escalate_to_human</code> with …"). The guide calls this "block policy-violating actions <em>and redirect to alternative workflows</em>".</li>
+  <li><b>All matching hooks run in parallel, and one <code>deny</code> wins</b> over any <code>allow</code>. Write each hook to stand alone.</li>
+  <li><b>Fail closed.</b> If a PreToolUse hook times out, the tool does <em>not</em> run.<span class="sn-ref"></span><span class="sidenote">Hooks docs → Fix common issues → <a href="https://code.claude.com/docs/en/agent-sdk/hooks#hook-timeout">Hook timeout</a>.</span></li>
+</ul>
+
+<div class="callout exam"><span class="label">Exam answer vs current reality</span>
+<div class="vs">
+  <div><h4>Exam (1.5)</h4>"PostToolUse hooks … intercept tool results for transformation before the model processes them." The guide names no fields.</div>
+  <div><h4>SDK today (v0.3.289)</h4>Replace output with <code>updatedToolOutput</code>, which works for every tool. <code>updatedMCPToolOutput</code> still exists but is deprecated. For MCP tools, <code>tool_response</code> is the content array <code>[{type:"text",text}]</code> (we checked).</div>
+</div></div>
+
+<h2>3 · Prerequisite gates: PostToolUse writes state, PreToolUse reads it</h2>
+
+<p>A gate is two hooks that share per-session state. <code>get_customer</code>'s PostToolUse records a verified ID only when there is <b>exactly one</b> match. A PreToolUse on <code>lookup_order | track_shipment | process_refund</code> denies the call until that ID exists. It also denies a refund whose <code>customer_id</code> doesn't match the verified one.</p>
+
+<ul>
+  <li><b>Several matches are not verified.</b> Two "Jane Rivera" accounts mean you ask for another identifier (task 5.2). Never pick the one with the most recent order.</li>
+  <li><b>State belongs to the session</b>, never a module-level global. Otherwise customer A's verification unlocks customer B's session.</li>
+  <li><b>Defence in depth.</b> Lesson 2's server also enforces the $500 rule. The hook still matters: it blocks <em>before</em> execution, works on tool servers you don't own, and turns a dead end into a redirect.</li>
+</ul>
+
+<h2>4 · Escalation: triggers and non-triggers (5.2)</h2>
+
+<div class="table-wrap"><table>
+  <tr><th>Situation</th><th>Correct move</th></tr>
+  <tr><td>Customer <b>explicitly asks for a human</b></td><td>Escalate <b>immediately</b>. Don't investigate or try to resolve first.</td></tr>
+  <tr><td><b>Policy is ambiguous or silent</b> (competitor price match when policy only covers own-site adjustments)</td><td>Escalate. Don't invent policy by analogy.</td></tr>
+  <tr><td><b>Can't make meaningful progress</b></td><td>Escalate with what you've tried.</td></tr>
+  <tr><td>Customer is <b>frustrated</b>, but the issue is straightforward</td><td>Acknowledge, <b>offer to resolve</b>. Escalate only if they <em>reiterate</em> wanting a human.</td></tr>
+  <tr><td><code>get_customer</code> returns <b>multiple matches</b></td><td>Ask for another identifier. Never pick one by heuristic.</td></tr>
+</table></div>
+
+<p><b>Unreliable proxies:</b> sentiment scores and the model's self-reported confidence. Neither tracks case complexity. In sample Q3 the agent was confidently wrong on hard cases. The proportionate fix is <b>explicit escalation criteria plus few-shot examples</b> in the system prompt.</p>
+
+<h3>The handoff must stand alone</h3>
+<p>The human who receives the case <b>can't see the transcript</b>. So the handoff is a structured record: <b>customer ID, root cause, refund amount, recommended action</b> (the guide's list), plus what you already checked. In the lab, <code>escalate_to_human</code>'s input schema enforces that shape, so structure comes from the schema, not from the agent remembering to include it.</p>
+
+<h3>Multi-concern requests (1.4)</h3>
+<p>"Where's 12346, <em>and</em> refund the lamp on 12345" → split it into distinct items, investigate each (in parallel where possible) with shared context such as the verified ID, then give <b>one</b> combined answer.</p>
+
+<h2>5 · Build: Exercise 1, the support agent with hooks</h2>
+
+<p>The agent runs on the <b>Agent SDK</b> (<code>query()</code>) with an in-process MCP server (<code>createSdkMcpServer</code>), on your Claude Code login. The tools in <code>lab/03-hooks/tools.ts</code> are done and include two new ones: <code>track_shipment</code>, which returns epoch seconds and numeric status codes, and <code>escalate_to_human</code>, which takes a structured handoff. You write <code>hooks.ts</code> (TODOs 1–4) and <code>prompt.ts</code> (TODO 5).</p>
+
+<div class="callout warn"><span class="label">Commands (PowerShell, in lab/)</span>
+<pre>cd C:\Users\wsenr\repos\ccarf\lab
+npm run l3:check                          <span class="c"># grader: 28 checks, calls your hooks directly, ~1 s</span>
+npm run l3:ask -- big                     <span class="c"># scenarios: skip big pushy human angry pricematch noid multi</span>
+npm run l3:ask -- "any free text"
+$env:HOOKS="off"   <span class="c"># same agent, no hooks</span>     $env:THIN="1"   <span class="c"># one-line tool descriptions</span>
+$env:MODEL="haiku" <span class="c"># weaker model</span>             $env:SOLUTION="1" <span class="c"># reference hooks + prompt</span>
+Remove-Item Env:HOOKS, Env:THIN, Env:MODEL, Env:SOLUTION -ErrorAction SilentlyContinue</pre>
+Output legend: <code>⛔ HOOK</code> means your PreToolUse denied the call, and the text after it is exactly what the model read. <code>[handoff queued]</code> prints every escalation record. Each run takes 15–40 s.</div>
+
+<ol class="steps">
+  <li><b>Baseline.</b> Run <code>npm run l3:check</code>. Expect 7/28: only the "allow" checks pass, because the starter allows everything. Then set <code>$env:THIN="1"; $env:MODEL="haiku"</code> and run <code>npm run l3:ask -- "Where is order 12346? It's Jane Rivera."</code>. Does it reveal tracking details before it knows <em>which</em> Jane? What delivery date does it give? (The real ETA is 2026-10-07 00:00 UTC.)</li>
+  <li><b>TODO 1–2: the gate.</b> <code>recordVerification</code> (PostToolUse) and <code>requireVerifiedCustomer</code> (PreToolUse). Use the helpers <code>resultJson</code>, <code>deny</code> and <code>addContext</code>. Run the grader until the 1.4 group is green, then re-run the step-1 prompt. You should see <code>⛔ HOOK</code>.</li>
+  <li><b>TODO 3: refund limit plus redirect.</b> Keep <code>THIN=1</code> but remove <code>MODEL</code>, then run <code>big</code>. With thin descriptions and your starter prompt, the model doesn't know the rule, so it calls <code>process_refund</code>. Your hook denies it, and the agent should call <code>escalate_to_human</code>. Read the <code>[handoff queued]</code> record: could a human act on it without the transcript? Then run the same with <code>$env:HOOKS="off"</code>. Who catches it now, and would you rely on that layer if payments were a third-party API?</li>
+  <li><b>TODO 4: normalisation.</b> <code>normalizeShipment</code> maps <code>status 3 → "in_transit"</code> and epoch → ISO with <code>updatedToolOutput</code>. Re-run the step-1 prompt with Jane's email and check that the date is correct.</li>
+  <li><b>TODO 5: escalation policy.</b> <code>Remove-Item Env:THIN</code>. Rewrite <code>prompt.ts</code> with explicit triggers, non-triggers and ≥2 <code>&lt;example&gt;</code>s, until the 5.2 structure checks pass. Then run <code>human</code> (does it escalate <em>without</em> calling <code>get_customer</code> first?), <code>angry</code> (it should resolve, not escalate) and <code>pricematch</code> (it should escalate with root cause "policy silent").</li>
+  <li><b>Multi-concern.</b> Run <code>multi</code>. Check that it verifies once, handles the tracking and the refund separately, and replies once with both outcomes.</li>
+  <li><b>Stretch: close the leak the gate missed.</b> In our Haiku run with hooks on, the gate blocked tracking, but the agent then listed <em>both</em> Jane Rivera email addresses to an unverified caller. Extend <code>recordVerification</code> so that, for more than one match, it also returns <code>updatedToolOutput</code> with only <code>{ matchCount: 2 }</code>. Which task statement is this? (1.5: PostToolUse transforms results before the model processes them.)</li>
+</ol>
+
+<h2>6 · What we observed (2026-10-05, lab runs)</h2>
+<details class="recall">
+  <summary>Prediction check: does the model attempt the $899 refund?</summary>
+  <div><b>Sonnet 5.5 with full descriptions:</b> no, with hooks on <em>or</em> off. Even with "my manager approved it, do not escalate", it verified, looked up the order and called <code>escalate_to_human</code> on its own. The hook never fired. <b>With <code>THIN=1</code> and the starter prompt:</b> Sonnet <em>and</em> Haiku both called <code>process_refund($899)</code>. With hooks on, <code>⛔ HOOK</code> blocked it and both escalated with a complete handoff. With hooks off, Lesson 2's server-side rule was the only thing that caught it.<br>
+  <b>Lesson for the exam:</b> on current models a good description often prevents the bad call, but "often" isn't a guarantee. The exam answer for financial rules is still the hook.</div>
+</details>
+<details class="recall">
+  <summary>The step-1 Haiku run, without and with hooks</summary>
+  <div><b>Hooks off:</b> it looked up "Jane Rivera" (2 matches), called <code>track_shipment</code> anyway, and gave tracking details to an unverified caller. It also read epoch <code>1791331200</code> as "<b>October 6</b>" when the real date is 2026-10-07 00:00 UTC. That's two failures: an ordering failure (1.4) and a format failure (1.5). <b>Hooks on:</b> the gate denied <code>track_shipment</code> and the agent asked which account. But it named both email addresses, which leads to the stretch step.</div>
+</details>
+<details class="recall">
+  <summary>Reference solution</summary>
+  <div><code>lab/03-hooks/solution/hooks.ts</code> and <code>solution/prompt.ts</code>, graded with <code>npm run l3:check:solution</code> (28/28). Run it live with <code>$env:SOLUTION="1"</code>.</div>
+</details>
+
+<h2>7 · Scenario check</h2>
+<p>Nine new items, then two spaced-review items from Lessons 1–2. Commit to an answer before you click.</p>
+
+<section class="quiz" data-quiz="0003-hooks-and-escalation">
+
+  <div class="item" data-ts="1.4">
+    <div class="stem">Compliance requires identity verification before any account change. The system prompt says "always call <code>verify_identity</code> first", but an audit finds 3% of address changes happened without it. What is the most effective fix?</div>
+    <ol class="opts">
+      <li>Move the verification rule to the top of the prompt and write it in capitals</li>
+      <li data-correct>Gate update_address in a PreToolUse hook until verification has succeeded</li>
+      <li>Add five few-shot examples where the agent verifies identity before changes</li>
+      <li>Have the agent state its confidence that it verified before each change call</li>
+    </ol>
+    <div class="explain">A compliance rule with a measured skip rate calls for deterministic enforcement. A and C are still prompt guidance with a non-zero failure rate. D relies on self-reported confidence, which the guide calls unreliable.</div>
+  </div>
+
+  <div class="item" data-ts="1.5">
+    <div class="stem">Your agent uses three MCP tools: billing returns Unix timestamps, CRM returns ISO 8601, and shipping returns <code>"MM/DD/YYYY"</code>. The agent sometimes miscalculates whether an order is inside the 30-day window. What should you implement?</div>
+    <ol class="opts">
+      <li>A system prompt section explaining each tool's date format and how to convert</li>
+      <li>A PreToolUse hook that rewrites every date argument the agent sends to tools</li>
+      <li data-correct>A PostToolUse hook that normalises all tool dates to ISO 8601 before use</li>
+      <li>A new date_convert tool the agent can call whenever it sees an odd format</li>
+    </ol>
+    <div class="explain">The guide's 1.5 skill is exactly this: PostToolUse normalisation of heterogeneous formats before the model processes them. A and D still depend on the model noticing and converting correctly every time. B intercepts the wrong direction, since the bad data is in the results, not the arguments.</div>
+  </div>
+
+  <div class="item" data-ts="1.5">
+    <div class="stem">A PreToolUse hook blocks <code>process_refund</code> calls over $500. After it fires, the agent tells customers "something went wrong, please try later." What should change?</div>
+    <ol class="opts">
+      <li>Return allow with a lowered amount of $500 so the refund partly succeeds</li>
+      <li>Set continue to false so that the whole session stops when the rule fires</li>
+      <li>Move the $500 rule into the system prompt so the agent avoids the call</li>
+      <li data-correct>Give a deny reason that redirects the agent to escalate_to_human with a handoff</li>
+    </ol>
+    <div class="explain">The model reads the deny reason as an error <code>tool_result</code>. A reason without direction leaves it guessing. The guide's pattern is "block … and <b>redirect</b> to alternative workflows (e.g. human escalation)". A silently changes what the customer asked for, B abandons the customer, and C gives up the guarantee.</div>
+  </div>
+
+  <div class="item" data-ts="5.2">
+    <div class="stem">A customer writes: "Where's my package? Actually, just get me a real person." The tracking lookup would be routine. What should the agent do?</div>
+    <ol class="opts">
+      <li>Look up the tracking first, since it can resolve this in one quick step</li>
+      <li data-correct>Escalate to a human at once without investigating the tracking question</li>
+      <li>Ask the customer why they prefer a person before deciding what to do next</li>
+      <li>Offer to resolve it first and escalate only if they repeat the human request</li>
+    </ol>
+    <div class="explain">An explicit request for a human is honoured immediately, with no investigation first. D is the right move for a <em>frustrated</em> customer who hasn't asked for a human, which is what makes it a tempting distractor.</div>
+  </div>
+
+  <div class="item" data-ts="5.2">
+    <div class="stem">A customer is angry that a chair is two days late. Tracking shows a normal delay and a firm delivery date. Your agent escalates every message that contains strong negative language. What is the better behaviour?</div>
+    <ol class="opts">
+      <li>Keep escalating, since angry customers are the most likely to churn soon</li>
+      <li>Raise the sentiment threshold so that only the angriest messages escalate</li>
+      <li data-correct>Acknowledge the frustration, give the date, and offer to resolve it here</li>
+      <li>Ignore the emotion and reply with only the tracking facts, kept brief</li>
+    </ol>
+    <div class="explain">Sentiment doesn't track complexity, and this case is simple. Acknowledge, resolve, and escalate only if the customer asks for a human again. B tunes an unreliable proxy instead of removing it.</div>
+  </div>
+
+  <div class="item" data-ts="5.2">
+    <div class="stem"><code>get_customer("Maria Lopez")</code> returns three accounts. The agent picks the one with the most recent order and proceeds. What should it do instead?</div>
+    <ol class="opts">
+      <li>Pick the account with the highest loyalty tier, since it is likeliest</li>
+      <li data-correct>Ask the customer for another identifier, such as their email address</li>
+      <li>Proceed with all three accounts and filter the orders that match later</li>
+      <li>Escalate to a human, because ambiguous identity is always a policy gap</li>
+    </ol>
+    <div class="explain">Several matches call for clarification with another identifier, not a heuristic pick (A, or the original behaviour). C exposes other people's data. D escalates something the agent can resolve with one question.</div>
+  </div>
+
+  <div class="item" data-ts="5.2">
+    <div class="stem">A customer asks you to match a competitor's lower price. Your policy covers price adjustments only when <em>your own</em> site drops its price. What should the agent do?</div>
+    <ol class="opts">
+      <li>Apply the own-site adjustment rule to the competitor price by analogy</li>
+      <li>Decline outright, since the policy does not mention competitors anywhere</li>
+      <li>Ask for the competitor's link and refund the difference if it checks out</li>
+      <li data-correct>Escalate, because the policy is silent on this particular request</li>
+    </ol>
+    <div class="explain">This is the guide's own example: when policy is ambiguous or silent on the request, escalate. A and C invent policy. B treats silence as a no, which is also inventing policy.</div>
+  </div>
+
+  <div class="item" data-ts="1.4">
+    <div class="stem">Escalated cases reach a human team that can't see chat transcripts. Agents spend the first five minutes of every case re-asking the customer for details. What fixes this at the source?</div>
+    <ol class="opts">
+      <li>Have the agent write a warm summary paragraph for each escalation</li>
+      <li>Give the human team read access to the agent's raw tool call logs</li>
+      <li data-correct>Require a structured handoff: customer ID, root cause, amount, next step</li>
+      <li>Ask the customer to restate their problem just before the handoff</li>
+    </ol>
+    <div class="explain">The guide's 1.4 skill: compile structured handoff summaries (customer ID, root cause, refund amount, recommended action) for humans who don't have the transcript. Putting the shape in the escalation tool's schema enforces it. A lacks guaranteed fields, B dumps unprocessed context on people, and D pushes the work back to the customer.</div>
+  </div>
+
+  <div class="item" data-ts="1.4 · 1.5">
+    <div class="stem">Which <b>two</b> rules belong in deterministic hooks rather than in the system prompt? (Select 2)</div>
+    <ol class="opts">
+      <li data-correct>Never issue a refund above $500 without a human approving it first</li>
+      <li>Apologise briefly before giving bad news about a delayed delivery date</li>
+      <li data-correct>Never call lookup_order before get_customer has verified one account</li>
+      <li>Escalate when the customer's request is not covered by written policy</li>
+      <li>Split multi-part requests into separate issues before investigating them</li>
+    </ol>
+    <div class="explain">Both correct rules are financial or identity guarantees that code can evaluate from the tool name, the inputs and the state. The others need judgement about the conversation (tone, policy coverage, decomposition), so they belong in prompt criteria and few-shot examples.</div>
+  </div>
+
+  <div class="item" data-ts="2.2 · review">
+    <div class="stem"><code>list_returns</code> finds no returns for a customer in the last 90 days. How should the MCP tool report this?</div>
+    <ol class="opts">
+      <li>isError true, with errorCategory validation and isRetryable false</li>
+      <li data-correct>A normal successful result containing an empty list of returns</li>
+      <li>isError true, with errorCategory transient so the agent tries again</li>
+      <li>A JSON-RPC protocol error so the client knows nothing was returned</li>
+    </ol>
+    <div class="explain">A query that worked and found nothing is a valid empty result, not an access failure. Flagging it as an error leads to pointless retries or a false "system down" message.</div>
+  </div>
+
+  <div class="item" data-ts="1.1 · review">
+    <div class="stem">Claude returns two <code>tool_use</code> blocks in one response: <code>track_shipment</code> and <code>lookup_order</code>. How do you send the results back?</div>
+    <ol class="opts">
+      <li>Two user messages, one tool_result in each, in the order they finished</li>
+      <li>One user message with a text summary first, then both tool_result blocks</li>
+      <li data-correct>One user message containing both tool_result blocks, before any text</li>
+      <li>Only the first tool_result now, then the second one on the following turn</li>
+    </ol>
+    <div class="explain">All results go in a single user message, and <code>tool_result</code> blocks come before any text. Splitting them up or putting text first breaks parallel tool use. Lesson 1, <a href="../reference/agentic-loop.html">reference</a>.</div>
+  </div>
+
+</section>
+
+<div class="source"><span class="label">Primary source · read this next</span>
+<p style="margin:.3rem 0 0"><a href="https://code.claude.com/docs/en/agent-sdk/hooks"><b>Intercept and control agent behavior with hooks</b></a> (Claude Code Docs). Read "How hooks work", "Outputs" and the "Add context and block a tool" example. Then reread task statements 1.4, 1.5 and 5.2 in <code>md/CCAR-F/sections/07</code> and <code>11</code>, and sample questions 1 and 3. Cheat sheet: <a href="../reference/hooks-and-escalation.html">reference/hooks-and-escalation</a>.</p>
+</div>
+
+<p class="ask">Stuck on a TODO, or not sure whether a rule belongs in a hook or in the prompt? Ask me. That's the judgement the exam tests most in Domain 1. When you're done, paste your <code>l3:check</code> score and quiz summary line, and tell me what your handoff record looked like in step 3 and how <code>angry</code> behaved in step 5.</p>
+
+<div class="nav-lessons"><a href="0002-tool-descriptions-and-mcp-errors.html">← Lesson 2 · Tool descriptions and MCP errors</a><span>Next: Lesson 4 · Coordinator and subagents →</span></div>
+
+</article></main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

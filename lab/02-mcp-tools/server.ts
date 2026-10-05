@@ -47,7 +47,7 @@ function toToolError(e: unknown): ToolError {
     return {
       errorCategory: "validation",
       message: "The input doesnt match with the schema. Check the format and retry; if it fails ask the customer to provide the correct fields for the tool",
-      isRetryable: true,
+      isRetryable: false,
     }
   if (e instanceof PolicyError)
     return {
@@ -61,6 +61,7 @@ function toToolError(e: unknown): ToolError {
       errorCategory: "permission",
       message: "Invalid authentication, requesting entity doesn't have access to the resource",
       isRetryable: false,
+      customerMessage: "The customer requested this refund is not the owner. Please check your order number and try again"
     }
   return {
     errorCategory: "permission",
@@ -122,11 +123,23 @@ server.registerTool("lookup_order", {
 //          in front of the agent BEFORE it calls.
 server.registerTool("process_refund", {
   description:
-    "process the refund",
+    "Refunds an order owned by the provided customer. The amount limit is $500, and must not exceed 30 days from the day of the order. Do not use it to simply look up for customer or order info",
   inputSchema: {
     customer_id: z.string().describe("Exact customer_id"),
-    
+    order_id: z.string().describe("Exact order_id"),
+    amount: z.number().positive().describe("Exact amount")
+  },
+}, async ({customer_id, order_id, amount}) => {
+  const id = order_id.replace(/^#/, "").trim();
+  if (!/^\d+$/.test(id)) return fail({ errorCategory: "validation", isRetryable: false, message: "Clarify with the user about the exact order_id they are looking for" });
+  try {
+    const refundProcessed = refund(customer_id, order_id, amount)
+    return ok({refund: refundProcessed})
+  } catch (error) {
+    return fail(toToolError(error))
   }
 })
+
+
 
 await server.connect(new StdioServerTransport());

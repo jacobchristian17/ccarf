@@ -32,7 +32,7 @@
 | 13 | Weak-area drill + mock exam 2 | weakest | — |
 
 ## Progress
-- [x] 1  - [ ] 2  - [ ] 3  - [ ] 4  - [ ] 5  - [ ] 6  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10  - [ ] 11  - [ ] 12  - [ ] 13
+- [x] 1  - [x] 2  - [ ] 3 (in progress)  - [ ] 4  - [ ] 5  - [ ] 6  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10  - [ ] 11  - [ ] 12  - [ ] 13
 
 ## Working notes
 - 2026-10-02: the user declared Lesson 1 done without reporting steps 5–8 or the quiz score. They prefer momentum; carry retrieval forward instead of gating on it.

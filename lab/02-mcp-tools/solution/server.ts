@@ -22,25 +22,33 @@ const fail = (err: ToolError): CallToolResult => ({ isError: true, content: [{ t
 /** One place that maps store failures to the error contract. Unknown errors are NOT guessed as retryable. */
 function toToolError(e: unknown): ToolError {
   if (e instanceof UpstreamTimeoutError)
-    return { errorCategory: "transient", isRetryable: true,
+    return {
+      errorCategory: "transient", isRetryable: true,
       message: `${e.message}. Retry once; if it fails again, tell the customer the system is temporarily unavailable.`,
-      customerMessage: "Our order system is slow to respond right now. Please try again in a few minutes." };
+      customerMessage: "Our order system is slow to respond right now. Please try again in a few minutes."
+    };
   if (e instanceof InvalidInputError)
-    return { errorCategory: "validation", isRetryable: false,
-      message: `${e.message}. Fix the input before calling again; do not retry unchanged.` };
+    return {
+      errorCategory: "validation", isRetryable: false,
+      message: `${e.message}. Fix the input before calling again; do not retry unchanged.`
+    };
   if (e instanceof NotOwnerError)
-    return { errorCategory: "permission", isRetryable: false,
+    return {
+      errorCategory: "permission", isRetryable: false,
       message: `${e.message}. Do not reveal anything about this order. Re-verify the customer's identity.`,
-      customerMessage: "I can't find that order on your account. Could you double-check the order number?" };
+      customerMessage: "I can't find that order on your account. Could you double-check the order number?"
+    };
   if (e instanceof PolicyError) {
     const customerMessage = {
       REFUND_LIMIT: `Refunds over $${AUTO_REFUND_LIMIT} need a quick review by our team. I've flagged this for a specialist.`,
       NOT_DELIVERED: "This order hasn't been delivered yet, so it can't be refunded. I can help you cancel it instead.",
       OUTSIDE_WINDOW: `This order is outside our ${REFUND_WINDOW_DAYS}-day refund window.`,
     }[e.rule];
-    return { errorCategory: "business", isRetryable: false,
+    return {
+      errorCategory: "business", isRetryable: false,
       message: `${e.rule}: ${e.message}. Retrying will not help.${e.rule === "REFUND_LIMIT" ? " Escalate to a human." : ""}`,
-      customerMessage };
+      customerMessage
+    };
   }
   return { errorCategory: "transient", isRetryable: false, message: `Unexpected error: ${String(e)}. Escalate to a human.` };
 }
@@ -77,8 +85,10 @@ server.registerTool("lookup_order", {
 }, async ({ order_id }) => {
   const id = order_id.replace(/^#/, "").trim();
   if (!/^\d+$/.test(id))
-    return fail({ errorCategory: "validation", isRetryable: false,
-      message: `order_id must be digits only (got '${order_id}'). Ask the customer for the order number shown in their confirmation email.` });
+    return fail({
+      errorCategory: "validation", isRetryable: false,
+      message: `order_id must be digits only (got '${order_id}'). Ask the customer for the order number shown in their confirmation email.`
+    });
   try {
     const order = getOrder(id);
     return ok(order ? { order } : { order: null, note: `No order numbered ${id}. Ask the customer to check the number.` });
