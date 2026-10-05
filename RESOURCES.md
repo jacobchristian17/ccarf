@@ -122,6 +122,8 @@ Verified 2026-10-01: every URL below returned HTTP 200 (after redirects) and its
   Lead agent and parallel subagents, how to delegate, scaling effort to query complexity. Use for: 1.2, 1.3, 5.3, 5.6.
 - [Writing effective tools for AI agents—using AI agents — Anthropic](https://www.anthropic.com/engineering/writing-tools-for-agents)
   Tool naming, namespacing, descriptions, token-efficient responses, useful error messages. Use for: 2.1, 2.2, 2.3, 5.1.
+- [Lost in the Middle: How Language Models Use Long Contexts — Liu et al. 2023, arXiv:2307.03172](https://arxiv.org/abs/2307.03172)
+  The origin of the "lost in the middle" term the guide uses (5.1). Not an Anthropic source. Pair it with the long-context prompting section of Prompting best practices.
 - [Effective context engineering for AI agents — Anthropic](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
   Context budget, compaction, structured note-taking, sub-agent architectures. Use for: 5.1, 5.4.
 - [Effective harnesses for long-running agents — Anthropic](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)

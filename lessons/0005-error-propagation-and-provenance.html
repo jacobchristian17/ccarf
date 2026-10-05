@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Error Propagation and Provenance</title>
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+</head>
+<body>
+<main><article>
+
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Lesson 5 of 13 · Domain 5 (15%), reinforcing Domain 1</div>
+<h1>Error propagation and provenance</h1>
+<p class="subtitle">If a failure never reaches the coordinator, the coordinator can't recover from it. If a source never reaches the synthesizer, nobody can check the claim. This lesson is about what has to survive each handoff.</p>
+
+<div class="meta">
+  <span><b>Task statements</b> 5.3 · 5.6 · 5.1 (the multi-agent parts)</span>
+  <span><b>Time</b> ~12 min read · ~50 min build · ~12 min quiz</span>
+  <span><b>Scenario</b> 3, Multi-Agent Research System · Exercise 4 (part 2)</span>
+</div>
+
+<details class="recall">
+  <summary>Warm-up: Lesson 4 retrieval, then a prediction</summary>
+  <div>From memory: (1) Exactly what does a subagent receive when it's spawned? Name the two things, and two things it does <em>not</em> get. (2) Name the three tool-distribution patterns from 2.3, with one lab example of each.<br>
+  Then predict: Haiku searchers are given a precise JSON report contract, with a status and a structured error. When <code>OUTAGE=games</code> makes every games search time out, how many of the reports match the contract on the first try? And when the coordinator writes its final answer from the synthesizer's cited brief, do the source URLs survive? §6 has what we saw.</div>
+</details>
+
+<h2>1 · Four ways to report a failure (5.3)</h2>
+
+<p>Sample Q8 is the template. A web-search subagent times out. How should that failure reach the coordinator? The guide rejects three of the options, and each rejection is a pattern you will see again.<span class="sn-ref"></span><span class="sidenote">Sample question 8, <code>md/CCAR-F/sections/14</code>. Task statement 5.3, <code>md/CCAR-F/sections/11</code>.</span></p>
+
+<div class="table-wrap"><table>
+  <tr><th>Pattern</th><th>What the coordinator sees</th><th>Verdict</th></tr>
+  <tr><td><b>Suppress</b></td><td>An empty result marked as success</td><td>✗ No recovery is possible, and the report looks complete when it isn't</td></tr>
+  <tr><td><b>Generic</b></td><td>"search unavailable", sent after the subagent's own retries</td><td>✗ The context is hidden: which query failed, what still worked, what to try next</td></tr>
+  <tr><td><b>Terminate</b></td><td>Nothing. A top-level handler kills the run</td><td>✗ One failure throws away every other subagent's results</td></tr>
+  <tr><td><b>Structured</b></td><td>Failure type, attempted query, partial results, alternatives</td><td>✓ The coordinator can retry a different query, try another source, or go ahead and annotate the gap</td></tr>
+</table></div>
+
+<p>Note the division of labour. The <b>subagent</b> handles transient failures locally (retry once) and propagates only what it can't resolve. The <b>coordinator</b> owns the recovery <em>decision</em>, because it is the only agent that can see the whole plan. That is the hub-and-spoke argument from Lesson 4 again: consistent error handling happens in one place.</p>
+
+<div class="callout key"><span class="label">Exam heuristic</span>
+When a question asks how a failure should flow, look for the option that carries <b>context</b> (type, what was attempted, partial results, alternatives) <b>to the agent that decides</b>. "Retry with backoff, then return a generic status" sounds robust, but it is the trap: the retries are fine, and the generic status is what's wrong.</div>
+
+<h2>2 · Access failure vs valid empty result</h2>
+
+<p>You met this distinction in Lesson 2 at the tool level (<code>isError</code> with <code>errorCategory</code> versus <code>{ results: [] }</code>). Task 5.3 lifts it one level up, to the subagent's report:</p>
+
+<div class="table-wrap"><table>
+  <tr><th>Status</th><th>Meaning</th><th>Coordinator's move</th></tr>
+  <tr><td><code>complete</code>, findings &gt; 0</td><td>Covered</td><td>Use it</td></tr>
+  <tr><td><code>complete</code>, findings = 0</td><td><b>Valid empty result</b>: the searches worked and nothing matched</td><td>Report "no matching sources". Don't retry it as if it were an outage</td></tr>
+  <tr><td><code>partial</code></td><td>Some queries worked, and one failed after a local retry</td><td>Keep the findings. Re-delegate once with an alternative, or annotate the gap</td></tr>
+  <tr><td><code>failed</code></td><td>Access failure: nothing could be retrieved</td><td>Re-delegate once with an alternative, then proceed without it and annotate the gap</td></tr>
+</table></div>
+
+<p>"We searched and found nothing" is evidence about the world. "We couldn't search" is evidence about your plumbing. If a report merges the two, the coordinator either retries real absences forever or treats outages as absences. The second is worse, because the final brief then states something false with confidence.</p>
+
+<h2>3 · Provenance: the claim–source mapping (5.6)</h2>
+
+<p>Attribution is lost at <b>summarization steps</b>, where findings get compressed and the mapping from claim to source is dropped. Every handoff in a multi-agent system is a potential summarization step: subagent → coordinator → synthesizer → final answer. The defence is structure that each hop must <em>preserve and merge</em>: <code>{ claim, evidence, source: { id, publisher, published, page } }</code>. Anthropic's research system goes one step further and uses a dedicated CitationAgent pass "to identify specific locations for citations".<span class="sn-ref"></span><span class="sidenote"><a href="https://www.anthropic.com/engineering/multi-agent-research-system">How we built our multi-agent research system</a>, process diagram section, and its Appendix on subagent outputs that "persist independently" to prevent "information loss during multi-stage processing".</span></p>
+
+<ul>
+  <li><b>Conflicting values from credible sources:</b> keep both and annotate each with its source. Don't pick one, average them, or drop one. If a subagent finds a conflict, it should finish the analysis with both values included and let the <b>coordinator</b> decide how to reconcile them before synthesis.</li>
+  <li><b>Dates:</b> require publication or collection dates in the structured output. Without them, "18% in 2024" and "31% in 2026" look like a contradiction when they are really a trend.</li>
+  <li><b>Methodological context:</b> keep each source's own characterization. In the lab, "31% use AI in at least half their sessions" and "25% use AI regularly (n = 1,200)" measure different things. Collapse them to "about 28% use AI" and you've made up a number.</li>
+  <li><b>Report structure:</b> keep well-established findings separate from contested ones, and include a coverage section. Render by content type: figures as tables, news as prose, technical findings as lists.</li>
+</ul>
+
+<h2>4 · The context budget between agents (5.1)</h2>
+
+<p>Task 5.1 includes several multi-agent skills. They come down to this: what crosses a handoff should be <b>small, structured and ordered on purpose</b>.</p>
+<ul>
+  <li><b>Return structured data, not reasoning chains</b>, when the downstream agent has a limited context budget: key facts, citations, and where useful a relevance score. Anthropic's figure: a subagent "might explore extensively, using tens of thousands of tokens or more, but returns only a condensed, distilled summary of its work (often 1,000-2,000 tokens)."<span class="sn-ref"></span><span class="sidenote"><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">Effective context engineering for AI agents</a>, "Sub-agent architectures".</span></li>
+  <li><b>Trim verbose tool output</b> to the relevant fields before it accumulates. In the guide's customer example, an order lookup has 40+ fields and the task needs 5.</li>
+  <li><b>Position matters ("lost in the middle")</b>. Models reliably use the beginning and end of a long input and may skip the middle. Put a key-findings or coverage summary at the <b>top</b> of aggregated input, and organise the details under explicit section headers. Anthropic's long-context guidance makes the same point about structure: long data first, the query at the end ("up to 30 percent" better), and each document wrapped with its source metadata.<span class="sn-ref"></span><span class="sidenote"><a href="https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#long-context-prompting">Prompting best practices → Long context prompting</a>. The term "lost in the middle" itself comes from Liu et al. 2023 (<a href="https://arxiv.org/abs/2307.03172">arXiv:2307.03172</a>). No Anthropic page uses it.</span></li>
+  <li><b>Require metadata from subagents</b> (dates, source locations, methodological context), so the synthesizer can interpret the findings correctly.</li>
+</ul>
+<p style="font-size:.92rem;color:var(--muted)">The rest of 5.1 (a "case facts" block kept outside summarised history, and multi-issue state in customer sessions) belongs to the customer-support scenario and comes back in Lesson 11.</p>
+
+<div class="callout exam"><span class="label">Exam answer vs current reality</span>
+<div class="vs">
+  <div><h4>Exam (5.3, 5.6)</h4>The guide frames these as <b>design choices</b>: subagents <em>return</em> structured error context, the synthesis agent <em>must preserve</em> claim–source mappings, and you <em>require</em> dates in the output. The mechanism it names is the output format you ask each agent for.</div>
+  <div><h4>SDK today (v0.3.289)</h4>You can enforce it in code. A <b>SubagentStop</b> hook can validate the final report and return <code>decision: "block"</code> with the issues, and the subagent then fixes its report. A <b>PreToolUse</b> hook on <code>Agent</code> can return <code>updatedInput</code> to replace the synthesizer's prompt with a brief that code built. The lab uses both. Both are verified in our runs.</div>
+</div>
+On the exam, pick the structured-output answer. In production, prompt for the structure, then validate it in code. That's the Lesson 3 rule again: deterministic enforcement where the stakes justify it. Lesson 10 makes this validate-and-retry loop the main topic.<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/hooks">Hooks reference</a>: SubagentStop decision control, and PreToolUse <code>updatedInput</code>.</span></div>
+
+<h2>5 · Build: Exercise 4b, failures and provenance</h2>
+
+<p>The lab is <code>lab/05-provenance/</code>. It uses Lesson 4's corpus and roles, but <code>web_search</code> can now fail on purpose. Code you write sits at three points in the pipeline:</p>
+<pre>searcher ──report──▶ <b>SubagentStop</b>: parse with <b>your SubagentReport</b> (TODO 1). If it fails, block and show the Zod issues (1 retry)
+          ──────────▶ <b>PostToolUse(Agent)</b>: parse again and store. Zod strips extra keys, which is the trimming step
+coordinator ─Agent(synthesizer)─▶ <b>PreToolUse</b>: prompt = <b>your buildSynthesisBrief</b>(question, reports) (TODO 2) + the coordinator's notes
+prompts: searcher failure handling · synthesizer structure · coordinator recovery policy (TODO 3)</pre>
+
+<div class="callout warn"><span class="label">Commands (PowerShell, in lab/)</span>
+<pre>cd C:\Users\wsenr\repos\ccarf\lab
+npm run l5:check                         <span class="c"># grader: 44 checks, ~1 s</span>
+npm run l5:ask -- creative               <span class="c"># scenarios: creative  dance  (or free text)</span>
+$env:OUTAGE="games"  <span class="c"># games searches always time out</span>    $env:FLAKY="1"     <span class="c"># first try of each query times out</span>
+$env:HOOKS="off"     <span class="c"># no validation, no brief injection</span> $env:SOLUTION="1"  <span class="c"># reference files</span>
+Remove-Item Env:OUTAGE, Env:FLAKY, Env:HOOKS, Env:SOLUTION -ErrorAction SilentlyContinue</pre>
+Runs take about 2–3 minutes. The trace lists each injected fault, each parsed report (status, number of findings, error), how many times SubagentStop sent a report back, the size of the injected brief, and three final-answer checks: <b>31% and 25% both kept</b>, <b>the outage gap named</b>, and <b>sources cited</b>.</div>
+
+<ol class="steps">
+  <li><b>Baseline.</b> Run <code>npm run l5:check</code> (expect 9/44). Then set <code>$env:OUTAGE="games"</code> and run <code>creative</code> with the starter files. The starter contract accepts almost anything and the brief is a JSON dump. Read the trace: what status did the games searcher report, and does the final answer say that games is missing <em>and why</em>?</li>
+  <li><b>TODO 1: the report contract</b> (<code>report.ts</code>). Add an ISO <code>published</code> date, the <code>SubagentError</code> object, and rules R1–R5 in <code>.superRefine</code>. Write each issue message as an instruction: the subagent reads it when SubagentStop sends the report back. Run the grader until the first group is green.</li>
+  <li><b>TODO 2: the synthesis brief</b> (<code>brief.ts</code>). Build the layout in the file header: coverage first, one line per report, then <code>## Findings: …</code> sections with the full claim–source mapping. The coverage line must never use the same words for a valid empty result and an access failure.</li>
+  <li><b>TODO 3: the prompts.</b> 3a: the searcher retries locally and reports partial or failed with alternatives, and treats empty results as <em>not</em> an error. 3b: the synthesizer writes well-established / contested / gaps, keeps both values with dates, and puts figures in a table. 3c: the coordinator's <code>ERROR_POLICY</code> re-delegates once, then proceeds and annotates the gap, and never aborts. Get <code>l5:check</code> to 44/44.</li>
+  <li><b>Outage, again.</b> Run <code>creative</code> with <code>OUTAGE=games</code>. Look for: a games report that is <code>failed</code> or <code>partial</code> with <code>timeout</code>, a re-delegation, "Gap for games named ✓", "both values ✓". How many contract retries did SubagentStop make?</li>
+  <li><b>Valid empty vs flaky.</b> Clear <code>OUTAGE</code>, set <code>$env:FLAKY="1"</code>, and run <code>dance</code>. The corpus has no dance or theatre sources. Does the coverage note call dance "no matching sources" rather than unavailable? Did any searcher report a timeout after only 1 attempt, and did R5 catch it?</li>
+  <li><b>Stretch: the last hop.</b> Compare the synthesizer's citations with the coordinator's final answer. Did URLs survive the coordinator's rewrite? Decide where a guarantee belongs: a coordinator-prompt rule, or a <code>Stop</code> hook that checks the final text for source ids.</li>
+</ol>
+
+<h2>6 · What we observed (2026-10-05, Sonnet 5.5 coordinator, Haiku subagents)</h2>
+<details class="recall">
+  <summary>Starter files, OUTAGE=games: 82 s</summary>
+  <div>The games searcher hit 3 timeouts and <b>retried none of them</b>. It reported <code>partial</code> with an error whose fields the starter's empty <code>SubagentError</code> schema had stripped, so the coordinator received <code>error {}</code>. That is the "generic status" anti-pattern, produced by an under-specified contract rather than a lazy model. Four other sectors were also marked <code>partial</code>, with nothing to say why. Sonnet still named the games gap ("timed out and were not retried"), but only because it read the raw report text. The final answer cited <b>0</b> source ids.</div>
+</details>
+<p style="font-size:.92rem;color:var(--muted)">The remaining runs use the reference solution.</p>
+<details class="recall">
+  <summary>Prediction check: did the reports match the contract first time?</summary>
+  <div><b>Often not.</b> With <code>OUTAGE=games</code>, SubagentStop sent back <b>7</b> reports in one run. With <code>FLAKY=1</code> it sent back <b>8</b>. The most common faults were <code>partial</code> without an error object and a timeout recorded with <code>attempts: 1</code> (R5: the searcher hadn't retried). After one retry most reports parsed. In two cases a report was still malformed (bad JSON, and an invalid status). The PostToolUse hook stored those as <code>failed · unavailable</code> instead of dropping them, so the coordinator saw a gap rather than silence. The prompt described the contract, and only the code enforced it.</div>
+</details>
+<details class="recall">
+  <summary>Outage run (OUTAGE=games, creative): 131 s</summary>
+  <div>Six researchers ran in parallel. The games searcher returned <b>failed · timeout</b> after 4 timed-out calls. The coordinator <b>re-delegated once</b> ("Games retry"), and an alternative query got through, giving <b>partial · 1 finding</b> (NPC dialogue). The brief injected into the synthesizer was 11,190 chars with all 12 source ids. Final answer: both 31% and 25% were kept, games was named as a gap with the reason (timeouts), and 12 sources were cited.<br>
+  <b>Not ideal:</b> Haiku marked music, writing and film as <code>partial · unavailable</code> because it found nothing on lawsuits. That is a valid empty result labelled as an access failure, which is exactly the confusion 5.3 warns about. The contract can't catch it, because the model chose the wrong label, not an invalid one. The coordinator's final note still called it "a genuine absence … not a technical failure".</div>
+</details>
+<details class="recall">
+  <summary>Valid-empty run (FLAKY=1, dance): 144 s</summary>
+  <div>Dance came back as <b>complete · 0 findings</b> after six queries. The final answer said "no matches … a genuine absence", not unavailable. Theatre, whose retry report was malformed, was annotated as "a retrieval gap, not evidence of absence". The difference was preserved all the way to the user. On conflicts, Sonnet wrote that 31% and 25% "measure different things" and kept both, preserving the methodological context.<br>
+  <b>The last hop lost provenance.</b> The coordinator rewrote the synthesizer's brief and changed <code>[https://…]</code> into "(Music Ledger, 2026-02-02)". The final answer cited <b>1</b> source id, against 11 in the brief. Publisher and date are still attribution, but the claim can no longer be traced to a URL. Every handoff is a summarization step (§3), including the last one. See stretch step 7.</div>
+</details>
+<details class="recall">
+  <summary>Reference solution</summary>
+  <div><code>lab/05-provenance/solution/</code>, graded with <code>npm run l5:check:solution</code> (44/44). Run it live with <code>$env:SOLUTION="1"</code>.</div>
+</details>
+
+<h2>7 · Scenario check</h2>
+<p>Ten new items, then six spaced-review items: three from Lesson 4 and three from Lesson 3. Commit to an answer before you click.</p>
+
+<section class="quiz" data-quiz="0005-error-propagation-and-provenance">
+
+  <div class="item" data-ts="5.3">
+    <div class="stem">Your document-analysis subagent can't open two of five reports because of a permissions error on the file store. It currently returns <code>{"status":"error"}</code>, and the coordinator either restarts the whole research run or ignores the subagent. What should the subagent return?</div>
+    <ol class="opts">
+      <li>The same status, plus a log of every call, so a human can debug it later</li>
+      <li>The three analysed reports as a normal success, without the two failures</li>
+      <li data-correct>Failure type, the reports attempted, the partial results and alternatives</li>
+      <li>An exception that bubbles up to a top-level handler and stops the research</li>
+    </ol>
+    <div class="explain">Structured error context lets the coordinator decide whether to retry, try another source, or proceed with the partial results (sample Q8). A gives the coordinator nothing it can act on. B suppresses the failure, so the gap disappears. D terminates the whole workflow because of one subagent.</div>
+  </div>
+
+  <div class="item" data-ts="5.3">
+    <div class="stem">A searcher reports <code>status: "failed"</code> whenever a query returns zero results. For niche subtopics, the coordinator retries three times and then says the "search service was unavailable". What is the root cause?</div>
+    <ol class="opts">
+      <li>The coordinator's retry limit is too low for such niche topics</li>
+      <li data-correct>A valid empty result is being reported as an access failure</li>
+      <li>The search index needs more sources on the niche subtopics</li>
+      <li>The searcher's queries are too narrow to return any results</li>
+    </ol>
+    <div class="explain">Zero results from a search that worked is a valid empty result: "complete, no matching sources". Calling it a failure triggers pointless retries and a false explanation in the final report. A makes the waste worse. C and D might be true, but they don't explain why "unavailable" was reported.</div>
+  </div>
+
+  <div class="item" data-ts="5.3">
+    <div class="stem">A subagent sends every transient 503 from its search API straight to the coordinator. The coordinator spends most of its turns handling errors that would have cleared on a retry. What is the best change?</div>
+    <ol class="opts">
+      <li>Have the coordinator ignore every error that it gets from a subagent</li>
+      <li>Retry indefinitely inside the subagent until every query succeeds</li>
+      <li>Return an empty result as a success whenever the API returns a 503</li>
+      <li data-correct>Retry transient errors locally; send only unresolved ones, with context</li>
+    </ol>
+    <div class="explain">Subagents should recover locally from transient failures and propagate only what they can't resolve, including what was attempted and any partial results. A loses real failures, B can hang forever, and C suppresses the error.</div>
+  </div>
+
+  <div class="item" data-ts="5.3">
+    <div class="stem">One of six research subagents times out. The final report covers five areas and reads as if it were complete. Reviewers only notice the missing area weeks later. Which change addresses this most directly?</div>
+    <ol class="opts">
+      <li>Fail the whole run whenever any subagent times out, so nothing is partial</li>
+      <li data-correct>Have synthesis annotate coverage, naming which areas have gaps and why</li>
+      <li>Increase the timeout of every subagent so that timeouts become very rare</li>
+      <li>Ask the synthesis subagent to sound less certain throughout the report</li>
+    </ol>
+    <div class="explain">Task 5.3: structure synthesis output with coverage annotations that show which findings are well supported and which areas have gaps because sources were unavailable. A throws away five good results. C makes the problem rarer but leaves it invisible when it happens. D hedges everything instead of identifying the gap.</div>
+  </div>
+
+  <div class="item" data-ts="5.3">
+    <div class="stem">Which <b>two</b> pieces of information in a subagent's error report most help the coordinator choose a recovery strategy? (Select 2)</div>
+    <ol class="opts">
+      <li data-correct>The failure type and the exact query that was attempted</li>
+      <li>A full stack trace from the search client that threw</li>
+      <li data-correct>Any partial results and possible alternative approaches</li>
+      <li>A generic status message such as "search unavailable"</li>
+      <li>The subagent's self-rated confidence that it would work</li>
+    </ol>
+    <div class="explain">The guide's structured error context is failure type, attempted query, partial results and alternatives. B is noise for a coordinating model, D is the generic-status anti-pattern, and E is a self-reported confidence score, which the guide treats as unreliable.</div>
+  </div>
+
+  <div class="item" data-ts="5.6">
+    <div class="stem">Two credible surveys report 31% and 25% for "producers using AI". The synthesis agent writes "about 28% of producers use AI", citing both. What should it have done?</div>
+    <ol class="opts">
+      <li>Report the more recent survey's value and drop the older one</li>
+      <li>Report the value from the survey with the larger sample size</li>
+      <li data-correct>Report both values, each attributed, and mark the point as contested</li>
+      <li>Leave out the statistic entirely, since the two sources disagree</li>
+    </ol>
+    <div class="explain">Conflicting statistics from credible sources should be annotated with their attribution, not resolved arbitrarily. Averaging creates a number no source reported, and it hides that the surveys measured different things. A and B pick one value arbitrarily, and D throws away evidence.</div>
+  </div>
+
+  <div class="item" data-ts="5.6">
+    <div class="stem">A report flags a "contradiction": one source says 12% of studios use generative tools, and another says 40%. Investigation shows the first figure was collected in 2023 and the second in 2026. What prevents this error?</div>
+    <ol class="opts">
+      <li>Telling synthesis to always prefer the larger of two values it finds</li>
+      <li data-correct>Requiring publication or collection dates in subagents' structured output</li>
+      <li>Restricting the research to sources published within the last 30 days</li>
+      <li>Adding a verify_fact call for every statistic before the synthesis runs</li>
+    </ol>
+    <div class="explain">Task 5.6: require publication or collection dates so that temporal differences aren't read as contradictions. With dates, 12% → 40% is a trend. A is arbitrary, C throws away valid history, and D checks the values but not when they applied.</div>
+  </div>
+
+  <div class="item" data-ts="5.6">
+    <div class="stem">Between the search and synthesis stages, a summarizer condenses each subagent's output into a paragraph. Final reports make accurate claims, but reviewers can't trace which source supports which claim. What is the fix?</div>
+    <ol class="opts">
+      <li>Ask the final report to add a bibliography of every source consulted</li>
+      <li>Give the synthesis agent web search so it can re-find each claim's source</li>
+      <li>Drop the summarizer and give synthesis every raw page that was retrieved</li>
+      <li data-correct>Pass structured claim–source mappings that each later stage must preserve</li>
+    </ol>
+    <div class="explain">Attribution is lost at summarization steps unless the claim-to-source mapping is kept as structure and merged through each stage. A lists sources without linking them to claims. B re-researches in the wrong agent (2.3). C solves attribution by flooding the context (5.1).</div>
+  </div>
+
+  <div class="item" data-ts="5.1">
+    <div class="stem">The synthesis agent receives twelve subagent reports concatenated in arrival order. Its output reliably uses the first two and last two reports, and often misses findings from the middle ones. What is the best change?</div>
+    <ol class="opts">
+      <li>Shuffle the report order on each run so every report is used sometimes</li>
+      <li>Split synthesis into twelve calls and concatenate their twelve outputs</li>
+      <li data-correct>Put a key-findings summary first and use explicit headers per section</li>
+      <li>Switch the synthesis agent to a model with a larger context window</li>
+    </ol>
+    <div class="explain">This is the "lost in the middle" effect. The guide's mitigation is to put key findings at the beginning of aggregated input and organise the details with explicit section headers. A spreads the omissions around, B loses cross-report synthesis, and D doesn't change how the model attends to position.</div>
+  </div>
+
+  <div class="item" data-ts="5.1">
+    <div class="stem">Each research subagent returns about 8,000 tokens: its reasoning, every query it tried, and full page excerpts. With six subagents, the synthesis agent's context is mostly process, not findings. What should change?</div>
+    <ol class="opts">
+      <li data-correct>Have subagents return structured key facts, citations and relevance</li>
+      <li>Have synthesis skim each report and skip what looks like reasoning</li>
+      <li>Run synthesis twice and merge the two drafts into one final report</li>
+      <li>Cap each subagent at fewer search queries so their reports are shorter</li>
+    </ol>
+    <div class="explain">Task 5.1: when downstream agents have limited context budgets, change the upstream agents to return structured data (key facts, citations, relevance scores) instead of verbose content and reasoning chains. B still pays the token cost and relies on the model to filter. C doubles the cost. D makes the research worse in order to make it shorter.</div>
+  </div>
+
+  <div class="item" data-ts="1.3 · review">
+    <div class="stem">A coordinator built with the Agent SDK never delegates. It tries to answer everything itself, even though three subagents are defined in its options. The config has <code>allowedTools: ["Read", "Grep"]</code>. What does the exam guide say to fix first?</div>
+    <ol class="opts">
+      <li>Rewrite the subagents' descriptions so they are much more detailed</li>
+      <li data-correct>Include "Task" in the coordinator's allowedTools so it can spawn agents</li>
+      <li>Move the subagent definitions into the coordinator's system prompt</li>
+      <li>Give each subagent the Read and Grep tools that the coordinator has</li>
+    </ol>
+    <div class="explain">The exam answer for 1.3 is that spawning goes through the Task tool, and the coordinator's allowedTools must include "Task". (Current reality from Lesson 4: the tool is now Agent, and what it needs is the tool being available. On the exam, answer Task.) A and C don't give it the tool, and D changes the subagents instead of the coordinator. Lesson 4, <a href="../reference/coordinator-and-subagents.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="1.2 · review">
+    <div class="stem">A synthesis draft on "remote work and productivity" covers tech and finance in depth but has one thin sentence on healthcare. The coordinator returns the draft to the user as it is. What should the coordinator do instead?</div>
+    <ol class="opts">
+      <li>Ask the synthesis agent to expand the healthcare section from memory</li>
+      <li>Return the draft and suggest the user ask about healthcare separately</li>
+      <li>Restart the whole pipeline with a longer and more detailed topic prompt</li>
+      <li data-correct>Spot the gap, re-delegate a targeted query, then re-run the synthesis</li>
+    </ol>
+    <div class="explain">Task 1.2: coordinators evaluate synthesis output for gaps, re-delegate targeted queries, and re-invoke synthesis until coverage is sufficient. A invents content without sources, B hands the coordinator's job to the user, and C throws away good work. Lesson 4.</div>
+  </div>
+
+  <div class="item" data-ts="2.3 · review">
+    <div class="stem">Your document-analysis subagent also has the web search tool. It often searches the web for news that the search subagent has already covered, so the two duplicate work. What change fits best?</div>
+    <ol class="opts">
+      <li data-correct>Scope the document agent to its library tools and remove web search</li>
+      <li>Add "do not search the web" in capitals to the document agent's prompt</li>
+      <li>Merge the two subagents into one agent that has every research tool</li>
+      <li>Have the coordinator dedupe their findings after both agents finish</li>
+    </ol>
+    <div class="explain">Role-scoped tool sets: an agent with tools outside its role tends to misuse them. B is probabilistic, C undoes the specialisation and enlarges the tool set, and D cleans up after the wasted work instead of preventing it. Lesson 4.</div>
+  </div>
+
+  <div class="item" data-ts="5.2 · review">
+    <div class="stem">A customer gives the name "Maria Santos". <code>get_customer</code> returns three accounts with that name in the same city. What should the agent do next?</div>
+    <ol class="opts">
+      <li>Pick the account with the most recent order and continue with that</li>
+      <li data-correct>Ask the customer for another identifier, such as email or order number</li>
+      <li>Escalate the case to a human, since the account cannot be identified</li>
+      <li>Show the customer all three accounts and ask which one looks right</li>
+    </ol>
+    <div class="explain">Multiple matches need clarification through more identifiers, not heuristic selection (A). C escalates something the agent can resolve. D exposes other customers' data. Lesson 3, <a href="../reference/hooks-and-escalation.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="5.2 · review">
+    <div class="stem">A customer asks the agent to match a lower price they saw on a competitor's site. The policy covers price adjustments on your own site only and says nothing about competitors. What is the correct move?</div>
+    <ol class="opts">
+      <li>Apply the adjustment, because the customer has given a valid reason</li>
+      <li>Decline, because the policy doesn't list competitor price matching</li>
+      <li data-correct>Escalate, because the policy is silent on this specific kind of request</li>
+      <li>Offer a partial discount as a compromise between the two prices</li>
+    </ol>
+    <div class="explain">Escalation triggers include policy gaps: cases where the policy is ambiguous or silent on the request. A and D make policy up. B treats silence as a prohibition. The guide's own example is competitor price matching. Lesson 3.</div>
+  </div>
+
+  <div class="item" data-ts="1.4 · review">
+    <div class="stem">Policy says the agent must verify the customer's identity before it changes a shipping address. Logs show that 4% of address changes ran before verification. The prompt already states the rule clearly. What is the proportionate fix?</div>
+    <ol class="opts">
+      <li>Add three few-shot examples of verifying before changing an address</li>
+      <li data-correct>Gate update_address in a hook until a verified customer ID is recorded</li>
+      <li>Move the verification rule to the very top of the system prompt</li>
+      <li>Ask the agent to state whether it verified, then trust its answer</li>
+    </ol>
+    <div class="explain">A required ordering with a measured skip rate calls for a programmatic prerequisite. A and C are still probabilistic, and D relies on self-report. Lesson 3, <a href="../reference/hooks-and-escalation.html">reference</a>.</div>
+  </div>
+
+</section>
+
+<div class="source"><span class="label">Primary source · read this next</span>
+<p style="margin:.3rem 0 0"><a href="https://www.anthropic.com/engineering/multi-agent-research-system"><b>How we built our multi-agent research system</b></a> (Anthropic Engineering). This time read "Production reliability and engineering challenges" ("errors compound", "letting the agent know when a tool is failing and letting it adapt works surprisingly well") and the Appendix on subagent outputs that "persist independently". Then read <a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">Effective context engineering</a> → "Sub-agent architectures", and reread task statements 5.1, 5.3 and 5.6 in <code>md/CCAR-F/sections/11</code> plus sample Q8. Cheat sheet: <a href="../reference/errors-and-provenance.html">reference/errors-and-provenance</a>.</p>
+</div>
+
+<p class="ask">If you're unsure whether something is a "valid empty" result or a failure, or which hop lost a citation, ask me. Diagnosing "where did it get lost" is the core of 5.3 and 5.6. When you're done, paste your <code>l5:check</code> score and the quiz summary line, plus three things from your OUTAGE run: the games report's status, the number of contract retries, and the source count in the final answer.</p>
+
+<div class="nav-lessons"><a href="0004-coordinator-and-subagents.html">← Lesson 4 · Coordinator and subagents</a><span>Next: Lesson 6 · Decomposition, sessions and long exploration →</span></div>
+
+</article></main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

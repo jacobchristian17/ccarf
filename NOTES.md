@@ -33,11 +33,11 @@
 | 13 | Weak-area drill + mock exam 2 | weakest | — |
 
 ## Progress
-- [x] 1  - [x] 2  - [x] 3  - [ ] 4 (in progress)  - [ ] 5  - [ ] 6  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10  - [ ] 11  - [ ] 12  - [ ] 13
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [ ] 5 (in progress)  - [ ] 6  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10  - [ ] 11  - [ ] 12  - [ ] 13
 
 ## Working notes
 - 2026-10-02: the user declared Lesson 1 done without reporting steps 5–8 or the quiz score. They prefer momentum; carry retrieval forward instead of gating on it.
 - Labs run on the Claude Code login: Lesson 2+ uses `claude -p --mcp-config … --strict-mcp-config --tools ""` (see `lab/02-mcp-tools/ask.ts`). On Windows, spawn `claude` without `shell: true`, or the prompt gets split on spaces.
 - Every lab has a deterministic grader (`npm run lN:check`) for a tight feedback loop, plus `lN:ask` for real-model observation.
 - Lesson 4 lab (`lab/04-subagents/`) runs the coordinator on the Agent SDK with `strictMcpConfig: true` (otherwise claude.ai connectors leak into the tool list), `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` and `background: false` per agent (subagents default to background). The coordinator sees every MCP tool regardless of `disallowedTools`, so the provided `hubOnly` hook denies its own research calls. Fault-injection switches follow the `THIN=1` pattern: `LOSSY=1`, `SEQUENTIAL=1`.
-
+- Lesson 5 lab (`lab/05-provenance/`) reuses the L4 corpus with a fault-injecting `tools.ts` (`OUTAGE=<subtopic>`, `FLAKY=1`). Hooks are done for the learner: SubagentStop validates the report with the learner's Zod contract (`decision: "block"` + issues, one retry), PostToolUse stores parsed reports, PreToolUse on the synthesizer swaps in `buildSynthesisBrief` output via `updatedInput`. Both mechanisms verified live on SDK v0.3.289.

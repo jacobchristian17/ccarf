@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Errors and Provenance Reference</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main><article>
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Reference · TS 5.3, 5.6, 5.1</div>
+<h1>Error propagation &amp; provenance</h1>
+<p class="subtitle">A one-page cheat sheet, taught in <a href="../lessons/0005-error-propagation-and-provenance.html">Lesson 5</a>.</p>
+
+<h2>Reporting a subagent failure (5.3, sample Q8)</h2>
+<table>
+  <tr><th>Pattern</th><th>Verdict</th></tr>
+  <tr><td>Empty result marked as success</td><td>✗ The failure is suppressed and the report looks complete</td></tr>
+  <tr><td>Retries, then a generic "search unavailable"</td><td>✗ Hides which query failed, what still worked, and what to try</td></tr>
+  <tr><td>Exception to a top-level handler that ends the run</td><td>✗ One failure throws away every other result</td></tr>
+  <tr><td><b>Structured: failureType, attemptedQuery, partial results, alternatives</b></td><td>✓ The coordinator can choose to retry, use another source, or proceed and annotate</td></tr>
+</table>
+<p><b>Subagent:</b> retry transient failures locally, and propagate only what it can't resolve. <b>Coordinator:</b> owns the recovery decision. Re-delegate once with an alternative, then proceed with partial results. Never abort the whole run.</p>
+
+<h2>Report status</h2>
+<table>
+  <tr><th>Status</th><th>Means</th><th>Coverage line</th></tr>
+  <tr><td>complete, findings &gt; 0</td><td>Covered</td><td>covered · n findings</td></tr>
+  <tr><td>complete, findings = 0</td><td><b>Valid empty result</b>: the search worked and nothing matched</td><td>GAP · searched, no matching sources</td></tr>
+  <tr><td>partial</td><td>Some findings, plus one unresolved failure</td><td>PARTIAL · n kept · timeout on "q" · alternatives</td></tr>
+  <tr><td>failed</td><td><b>Access failure</b>, no findings</td><td>GAP · source unavailable · timeout on "q" · alternatives</td></tr>
+</table>
+<p>"Nothing exists" and "couldn't look" must never share wording. That is the same distinction as Lesson 2's <code>isError</code> versus <code>results: []</code>, one level up.</p>
+
+<h2>Provenance (5.6)</h2>
+<ul>
+  <li>Finding = <code>{ claim, evidence, source: { id, publisher, published: YYYY-MM-DD, page } }</code>. Every hop must <b>preserve and merge</b> it.</li>
+  <li>Attribution is lost at <b>summarization steps</b>, and every handoff is one, <em>including the coordinator's final rewrite</em>.</li>
+  <li><b>Conflicts:</b> keep both values, each with its source. Never pick, average or drop one. A subagent completes its analysis with the conflict annotated, and the coordinator decides how to reconcile before synthesis.</li>
+  <li><b>Dates</b> turn a false "contradiction" into a trend. Keep each source's methodological context (sample size, what was actually measured).</li>
+  <li>Report sections: <b>well-established · contested · coverage gaps</b>. Figures as tables, news as prose, technical findings as lists.</li>
+</ul>
+
+<h2>Context between agents (5.1, multi-agent parts)</h2>
+<ul>
+  <li>Upstream agents return <b>structured key facts, citations and relevance</b>, not reasoning chains. Subagents return roughly 1–2k tokens.</li>
+  <li>Trim verbose tool output to the relevant fields before it accumulates (40 fields → 5).</li>
+  <li><b>Lost in the middle:</b> put the key-findings or coverage summary <b>first</b> and use explicit section headers. Long data at the top, the query at the end.</li>
+  <li>Require metadata (dates, source locations, method) in subagent output.</li>
+  <li><span class="tag">Lesson 11</span> "Case facts" block outside summarised history, and multi-issue state, for customer sessions.</li>
+</ul>
+
+<h2>Enforcing it in the Agent SDK (v0.3.289)</h2>
+<pre>SubagentStop  → validate last_assistant_message with Zod; bad → { decision: "block", reason: issues }  (respect stop_hook_active)
+PostToolUse(Agent) → parse + store the report (Zod strips unknown keys = trimming)
+PreToolUse(Agent, synthesizer) → { hookSpecificOutput: { permissionDecision: "allow", updatedInput: { ...input, prompt: brief } } }</pre>
+<p>Exam: choose the <b>structured-output</b> design answer. Reality: prompt for the structure, then validate it in code.</p>
+<p>Distractors: average conflicting values; prefer the newest or biggest; drop contested statistics; a bibliography without claim links; give synthesis web search; a bigger context window for lost-in-the-middle; self-rated confidence in error reports.</p>
+</article></main>
+</body>
+</html>
