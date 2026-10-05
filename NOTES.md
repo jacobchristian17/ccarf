@@ -9,6 +9,7 @@
 
 ## Teaching conventions
 - Every lesson: knowledge → build → exam-style scenario quiz (4 options, equal length) → spaced review questions from earlier lessons
+- **Review-drill rule (user request, 2026-10-05):** every lesson quiz ends with **3 review questions from each of the 2 lessons immediately before it** (Lesson N gets 3 from N−1 and 3 from N−2, so 6 in total; Lesson 2 gets 3 from Lesson 1). Tag them `data-ts="<ts> · review"`, write new scenarios rather than reusing the earlier lesson's stems, spread them across that lesson's task statements, and link the earlier lesson's reference sheet in the explanation.
 - **Exam answer vs current reality** callouts. The guide (v1.0, July 2026) is authoritative for the exam. Known drift:
   - Forced `tool_choice` (`any` / `{type:"tool"}`) returns a 400 on Opus 5.5 / Sonnet 5.5 / Fable 5.1. The exam still tests it. For labs that exercise it, use `claude-opus-5` (supports forced tool choice), and note the substitution.
   - Other drift (Task→Agent tool rename, commands→skills, etc.): see the research fact sheet in learning records / RESOURCES.md
@@ -32,9 +33,11 @@
 | 13 | Weak-area drill + mock exam 2 | weakest | — |
 
 ## Progress
-- [x] 1  - [x] 2  - [ ] 3 (in progress)  - [ ] 4  - [ ] 5  - [ ] 6  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10  - [ ] 11  - [ ] 12  - [ ] 13
+- [x] 1  - [x] 2  - [x] 3  - [ ] 4 (in progress)  - [ ] 5  - [ ] 6  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10  - [ ] 11  - [ ] 12  - [ ] 13
 
 ## Working notes
 - 2026-10-02: the user declared Lesson 1 done without reporting steps 5–8 or the quiz score. They prefer momentum; carry retrieval forward instead of gating on it.
 - Labs run on the Claude Code login: Lesson 2+ uses `claude -p --mcp-config … --strict-mcp-config --tools ""` (see `lab/02-mcp-tools/ask.ts`). On Windows, spawn `claude` without `shell: true`, or the prompt gets split on spaces.
 - Every lab has a deterministic grader (`npm run lN:check`) for a tight feedback loop, plus `lN:ask` for real-model observation.
+- Lesson 4 lab (`lab/04-subagents/`) runs the coordinator on the Agent SDK with `strictMcpConfig: true` (otherwise claude.ai connectors leak into the tool list), `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` and `background: false` per agent (subagents default to background). The coordinator sees every MCP tool regardless of `disallowedTools`, so the provided `hubOnly` hook denies its own research calls. Fault-injection switches follow the `THIN=1` pattern: `LOSSY=1`, `SEQUENTIAL=1`.
+

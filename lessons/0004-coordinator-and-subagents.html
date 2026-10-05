@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coordinator and Subagents</title>
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+</head>
+<body>
+<main><article>
+
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Lesson 4 of 13 · Domains 1 (27%) and 2 (18%)</div>
+<h1>Coordinator and subagents</h1>
+<p class="subtitle">A subagent knows only what you write in its prompt. Everything in this lesson follows from that.</p>
+
+<div class="meta">
+  <span><b>Task statements</b> 1.2 · 1.3 · 2.3</span>
+  <span><b>Time</b> ~12 min read · ~55 min build · ~12 min quiz</span>
+  <span><b>Scenario</b> 3, Multi-Agent Research System · Exercise 4 (part 1)</span>
+</div>
+
+<details class="recall">
+  <summary>Warm-up: Lesson 3 retrieval, then a prediction</summary>
+  <div>From memory: (1) Give two tests that tell you a rule belongs in a <b>hook</b> rather than the prompt. (2) A customer is angry about a late chair but hasn't asked for a human. What's the move? And what changes if they <em>do</em> ask?<br>
+  Then predict: a coordinator prompt says "ask the searcher about each subtopic, <b>one at a time</b>". Sonnet 5.5 runs it. Does it spawn the searchers one per turn? Does a searcher with no <code>tools</code> list stay on <code>web_search</code>? §7 has what we saw.</div>
+</details>
+
+<h2>1 · Hub and spoke: the coordinator owns the plan</h2>
+
+<p>In the exam's research system, a <b>coordinator</b> breaks the topic down, delegates to specialist subagents, collects their results and decides what happens next. All communication between subagents goes <b>through the coordinator</b>, which gives you observability, consistent error handling and controlled information flow. Subagents never talk to each other directly.<span class="sn-ref"></span><span class="sidenote">Exam guide, task statement 1.2 (<code>md/CCAR-F/sections/07</code>).</span></p>
+
+<p>Because everything flows through it, the coordinator is also where most root causes live. In sample Q7, every subagent did its job correctly, yet the report on "AI in creative industries" covered only visual arts. The coordinator's logs showed why: it had split the topic into digital art, graphic design and photography. <b>The decomposition was too narrow.</b> Fixing a downstream agent would not help, because each one handled exactly what it was given.<span class="sn-ref"></span><span class="sidenote">Sample question 7, <code>md/CCAR-F/sections/14</code>.</span></p>
+
+<div class="table-wrap"><table>
+  <tr><th>Coordinator job (1.2)</th><th>What "good" looks like</th></tr>
+  <tr><td><b>Decompose</b></td><td>Covers the <em>full breadth</em> of the topic. Gives each subagent distinct subtopics or source types, so their work doesn't overlap</td></tr>
+  <tr><td><b>Select</b></td><td>Matches effort to the query. A single fact needs one searcher, not the whole pipeline</td></tr>
+  <tr><td><b>Delegate</b></td><td>Writes complete prompts and spawns independent work in parallel</td></tr>
+  <tr><td><b>Refine</b></td><td>Checks the synthesis for gaps, re-delegates targeted queries, and runs synthesis again</td></tr>
+</table></div>
+
+<p>Anthropic's own research system gives the scale: "Simple fact-finding requires just 1 agent with 3-10 tool calls … complex research might use more than 10 subagents." Their early failure mode was vague delegation that made subagents <b>duplicate each other's work</b>.<span class="sn-ref"></span><span class="sidenote"><a href="https://www.anthropic.com/engineering/multi-agent-research-system">How we built our multi-agent research system</a>, Anthropic Engineering. See "Scale effort to query complexity" and "Teach the orchestrator how to delegate".</span></p>
+
+<h2>2 · Subagents start empty (1.3)</h2>
+
+<p>A subagent gets its own system prompt (<code>AgentDefinition.prompt</code>) and the <b>prompt string from the Agent tool call</b>. That's it. It doesn't see the parent's conversation, the parent's tool results, or the parent's system prompt.<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/agent-sdk/subagents#what-subagents-inherit">Subagents in the SDK → What subagents inherit</a>, Claude Code Docs.</span> Two consequences show up on the exam:</p>
+<ul>
+  <li><b>Repeat the user's constraints in every subagent prompt.</b> If the user said "2026 sources only" and the coordinator doesn't pass it on, the searcher can't know.</li>
+  <li><b>Give the synthesizer the complete findings, in structure.</b> Keep content apart from metadata: <code>{ claim, evidence, source: { id, publisher, published, page } }</code>. If the coordinator hands over a prose summary, the sources are gone and can't be recovered (provenance, the topic of Lesson 5).</li>
+</ul>
+
+<div class="callout key"><span class="label">Exam heuristic</span>
+If a subagent "ignores" a constraint or "loses" citations, the cause is almost always <b>what the coordinator put in the prompt</b>. Distractors blame the subagent's model, add shared memory, or ask the subagent to fetch the parent's history. None of those exist. The fix is an explicit, complete, structured prompt.</div>
+
+<h2>3 · Spawning: the Agent tool and <code>AgentDefinition</code></h2>
+
+<pre>query({ prompt, options: {
+  tools: ["Agent"],                               <span class="c">// the coordinator can spawn (exam: "Task")</span>
+  allowedTools: ["Agent", "mcp__research__*"],    <span class="c">// auto-approve</span>
+  agents: {
+    searcher: { description: "Web researcher for ONE assigned subtopic…",   <span class="c">// when to use it</span>
+                prompt: "You research one subtopic… return JSON findings",  <span class="c">// its system prompt</span>
+                tools: ["mcp__research__web_search"],                       <span class="c">// its ONLY tools</span>
+                model: "haiku" } } } })</pre>
+
+<ul>
+  <li><b>Parallel = several Agent calls in ONE coordinator response.</b> Spawning one per turn makes them run in sequence. Independent subtasks then finish in the time of the slowest one, not the sum of all of them.</li>
+  <li><b><code>description</code> is routing.</b> The coordinator reads it to decide which agent to use, so write it like a Lesson 2 tool description: purpose, inputs, when to use it.</li>
+  <li><b>Omit <code>tools</code> and the subagent inherits every tool.</b> Always pass an explicit list.</li>
+</ul>
+
+<div class="callout exam"><span class="label">Exam answer vs current reality</span>
+<div class="vs">
+  <div><h4>Exam (1.3)</h4>"The <b>Task</b> tool as the mechanism for spawning subagents, and the requirement that <b>allowedTools must include "Task"</b>." Subagents are implied to be one level deep.</div>
+  <div><h4>SDK today (v0.3.289)</h4>It's the <b>Agent</b> tool in <code>tool_use</code> blocks, but <code>Task</code> in the <code>system:init</code> list, and <code>"Task"</code> is still accepted. <code>allowedTools</code> means <em>auto-approve</em>. In our test the coordinator spawned with <code>allowedTools: []</code>, and what it needs is <code>Agent</code> in <code>tools</code>. Subagents run in the <b>background</b> by default and <b>can</b> spawn their own subagents (default depth 3).</div>
+</div>
+On the exam, answer "allowedTools includes Task". In real code, keep spawning in the coordinator only: that's what hub-and-spoke means.<span class="sn-ref"></span><span class="sidenote">Subagents docs → <a href="https://code.claude.com/docs/en/agent-sdk/subagents#detect-subagent-invocation">Detect subagent invocation</a> and <a href="https://code.claude.com/docs/en/agent-sdk/subagents#cap-subagent-depth-concurrency-and-spend">Cap subagent depth</a>.</span></div>
+
+<h2>4 · Scoped tools (2.3)</h2>
+
+<p>Giving an agent 18 tools instead of 4–5 makes its tool choice less reliable. An agent that has tools outside its role tends to misuse them: the guide's example is a <b>synthesis agent running web searches</b>.</p>
+
+<div class="table-wrap"><table>
+  <tr><th>Pattern</th><th>In the lab</th></tr>
+  <tr><td><b>Role-scoped tool sets</b></td><td>searcher → <code>web_search</code> · doc-analyst → <code>list_documents</code>, <code>load_document</code> · synthesizer → <code>verify_fact</code></td></tr>
+  <tr><td><b>A constrained tool in place of a generic one</b></td><td><code>load_document(doc_id)</code> opens only documents in the approved library, unlike a generic <code>fetch_url</code></td></tr>
+  <tr><td><b>A scoped cross-role tool for frequent needs</b></td><td><code>verify_fact</code> handles the 85% of quick checks. Deep checks still go back through the coordinator (sample Q9)</td></tr>
+</table></div>
+
+<h2>5 · Coordinator prompts: goals and criteria, not procedures</h2>
+<p>Task statement 1.3 asks for coordinator prompts that "specify research goals and quality criteria rather than step-by-step procedural instructions". A numbered procedure fixes the shape of the decomposition in advance. Goals let the coordinator adapt to what it finds. Anthropic's version: each subagent needs "an objective, an output format, guidance on the tools and sources to use, and clear task boundaries."</p>
+<pre><span class="c">✗</span> Step 1: pick the three most important subtopics. Step 2: ask the searcher about each, one at a time.
+<span class="c">✓</span> Coverage: span the full breadth of the topic, one distinct area per subagent, no overlap.
+  Proportion: a single fact needs one searcher. Speed: spawn independent subagents in ONE response.
+  Subagents don't inherit your context: pass constraints and complete findings. Check for gaps; re-delegate.</pre>
+
+<h2>6 · Build: Exercise 4a, the research coordinator</h2>
+
+<p>The lab is <code>lab/04-subagents/</code>. It has a fictional research corpus (12 sources across 5 creative sectors, on <code>.test</code> URLs), an in-process <code>research</code> MCP server, and a runner that prints a <b>trace</b>: which Agent calls shared one response, how long each took, which subtopics were covered, and how many sources reached the synthesizer and the final answer. You write <code>agents.ts</code> (TODO 1), <code>coordinator.ts</code> (TODO 2) and <code>hooks.ts</code> (TODO 3).</p>
+
+<div class="callout warn"><span class="label">Commands (PowerShell, in lab/)</span>
+<pre>cd C:\Users\wsenr\repos\ccarf\lab
+npm run l4:check                       <span class="c"># grader: 31 checks, ~1 s</span>
+npm run l4:ask -- creative             <span class="c"># scenarios: creative  simple  since2026  (or free text)</span>
+$env:SEQUENTIAL="1"  <span class="c"># one spawn per response</span>   $env:LOSSY="1"     <span class="c"># coordinator hands over a summary</span>
+$env:HOOKS="off"     <span class="c"># no context hooks</span>        $env:SOLUTION="1"  <span class="c"># reference files</span>
+Remove-Item Env:SEQUENTIAL, Env:LOSSY, Env:HOOKS, Env:SOLUTION -ErrorAction SilentlyContinue</pre>
+Runs take 20–200 s. <code>⛔ HOOK</code> means a PreToolUse hook denied the call, and the text is what the coordinator read. The provided <code>hubOnly</code> hook stops the coordinator from searching for itself (see the comment in <code>hooks.ts</code> for why that's a hook and not config).</div>
+
+<ol class="steps">
+  <li><b>Baseline.</b> Run <code>npm run l4:check</code> (expect 6/31), then <code>npm run l4:ask -- creative</code>. The coordinator has no <code>Agent</code> tool. What does it try instead, and what does it tell the user?</li>
+  <li><b>TODO 2a: one line.</b> Add <code>"Agent"</code> to <code>COORDINATOR_TOOLS</code> and run <code>creative</code> again with the starter prompt still in place. Read the trace. How many Agent calls landed in response 1, even though the prompt says "one at a time"? Which sectors are <b>✗</b>? Did any <code>searcher</code> call <code>load_document</code>? How many sources reached the final answer?</li>
+  <li><b>TODO 1: the subagents.</b> Give all three agents explicit, role-scoped <code>tools</code>, a routing <code>description</code>, and a prompt that asks for structured findings (claim, evidence, source id, publisher, date, page). The synthesizer cites every claim, keeps conflicting values side by side, and lists gaps. Run the grader until the first group is green.</li>
+  <li><b>TODO 2b: the coordinator prompt.</b> Replace the steps with goals and quality criteria (§5). Run <code>creative</code> and look for 5/5 ✓ coverage and a parallel first response. Then run <code>simple</code>: did it use one searcher and skip the synthesizer? Then run <code>since2026</code>: is "2026" in every subagent prompt, and did the three 2025 sources stay out?</li>
+  <li><b>TODO 3: make context passing a guarantee.</b> <code>recordSources</code> (PostToolUse on Agent) collects every source id that comes back. <code>requireCompleteBrief</code> (PreToolUse on Agent) denies a synthesizer call whose prompt is missing any of them, with a redirect that says <em>why</em>. Then set <code>$env:LOSSY="1"</code> and run <code>creative</code>: you should see <code>⛔ HOOK</code>, then a re-issued synthesizer call. Run it again with <code>$env:HOOKS="off"</code> as well and compare the source counts.</li>
+  <li><b>Latency (Exercise 4, step 2).</b> Clear <code>LOSSY</code> and <code>HOOKS</code>. Note the wall clock of a normal <code>creative</code> run, then set <code>$env:SEQUENTIAL="1"</code> and run it again. Compare the research phase (first spawn → last researcher done) as well as the total.</li>
+  <li><b>Stretch: conflicting sources.</b> Two music sources give 31% and 25%. Does your synthesizer keep both, each with its source, or quietly pick one? Lesson 5 makes this a graded requirement.</li>
+</ol>
+
+<h2>7 · What we observed (2026-10-05, Sonnet 5.5 coordinator, Haiku subagents)</h2>
+<details class="recall">
+  <summary>Prediction check: the starter prompt with Agent enabled</summary>
+  <div>Sonnet <b>ignored "one at a time"</b> and spawned 3 searchers in a single response. It split the topic <b>by theme</b> (adoption, copyright, jobs) instead of by sector, so <b>games ✗</b>. Two searchers with no <code>tools</code> list called <code>list_documents</code>/<code>load_document</code>: that's the inherited tool set in action (2.3). With the stub synthesizer, the final answer cited <b>0</b> sources in one run and 8 of 10 in another, where the two library doc_ids were dropped.<br>
+  <b>Lesson for the exam:</b> current models parallelise on their own more than the guide assumes, but decomposition and attribution still depend on the coordinator prompt.</div>
+</details>
+<details class="recall">
+  <summary>Reference solution runs</summary>
+  <div><b>creative:</b> 6 Agent calls in one response (5 sector searchers plus the doc-analyst), 5/5 coverage, 12 source ids in the synthesizer prompt, 98 s. <b>SEQUENTIAL:</b> same coverage, <b>195 s</b>. The research phase went from about 46 s to about 121 s. <b>simple:</b> 1 searcher, no synthesizer, 20 s. <b>since2026:</b> "2026 only" was in every prompt, and 9 sources were cited (the three 2025 ones were excluded).<br>
+  <b>LOSSY with hooks on:</b> the synthesizer call was denied ("missing findings from 11 sources"). The coordinator re-issued it with all 11, and the brief cited 11. <b>LOSSY with hooks off:</b> the brief cited <b>0</b>. Same lesson as Lesson 3: without the fault, Sonnet passed every source on its own and the hook never fired. The hook is there for the run where the model doesn't.</div>
+</details>
+<details class="recall">
+  <summary>Reference solution</summary>
+  <div><code>lab/04-subagents/solution/</code>, graded with <code>npm run l4:check:solution</code> (31/31). Run it live with <code>$env:SOLUTION="1"</code>.</div>
+</details>
+
+<h2>8 · Scenario check</h2>
+<p>Ten new items, then six spaced-review items: three from Lesson 3 and three from Lesson 2. Commit to an answer before you click.</p>
+
+<section class="quiz" data-quiz="0004-coordinator-and-subagents">
+
+  <div class="item" data-ts="1.2">
+    <div class="stem">A research system on "health effects of social media on teenagers" produces reports about anxiety, depression and sleep, but never covers physical activity, body image or any positive effects. Each subagent's output is accurate. The coordinator's log shows three subtasks: anxiety, depression, sleep. What is the root cause?</div>
+    <ol class="opts">
+      <li>The search subagent's queries are too short to surface the other areas</li>
+      <li>The synthesis subagent drops any findings that don't fit its outline</li>
+      <li data-correct>The coordinator's decomposition is too narrow for the breadth of the topic</li>
+      <li>The document subagent has no access to papers on the missing areas</li>
+    </ol>
+    <div class="explain">The log shows that the missing areas were never assigned. The subagents did what they were given, and the gap is in what they were given (sample Q7's pattern). A, B and D blame agents that are working correctly within their scope.</div>
+  </div>
+
+  <div class="item" data-ts="1.3">
+    <div class="stem">Searchers return findings with URLs and dates, but the synthesis subagent's report has no citations. The coordinator's call to it says "Write the report based on the research so far." What is the most effective fix?</div>
+    <ol class="opts">
+      <li>Tell the synthesis subagent to look up sources for its claims itself</li>
+      <li data-correct>Pass the full findings as structured data with source metadata in its prompt</li>
+      <li>Turn on shared memory so the synthesis subagent can read the findings</li>
+      <li>Switch the synthesis subagent to a larger model that cites more often</li>
+    </ol>
+    <div class="explain">Subagents don't inherit the coordinator's context, so "the research so far" means nothing to the synthesizer. The fix is to put the complete findings in its prompt, with content kept apart from metadata (claim, evidence, URL, date) so attribution survives. A re-does the research in the wrong agent, C doesn't exist, and D doesn't change what the synthesizer can see.</div>
+  </div>
+
+  <div class="item" data-ts="1.3">
+    <div class="stem">A coordinator spawns four independent search subagents, one per turn, waiting for each result before the next. Research takes four times as long as the slowest single search. What change cuts latency most directly?</div>
+    <ol class="opts">
+      <li data-correct>Have the coordinator emit all four Agent calls in a single response</li>
+      <li>Merge the four searches into one subagent with four times the budget</li>
+      <li>Give each subagent a lower max-turns limit so each search ends sooner</li>
+      <li>Cache search results so that repeated queries are answered instantly</li>
+    </ol>
+    <div class="explain">Several Agent tool calls in one coordinator response run in parallel, so total time approaches the slowest subagent's time, not the sum. B loses the parallelism, C trades away quality, and D only helps with repeated queries.</div>
+  </div>
+
+  <div class="item" data-ts="1.3">
+    <div class="stem">A user asks for research "limited to EU regulation". The final report mixes US and EU material. The coordinator's prompts to the searchers say "Research AI copyright rules." Why did this happen?</div>
+    <ol class="opts">
+      <li>The searchers' web index ranks US sources above EU sources by default</li>
+      <li>The synthesis subagent added US material to make the report complete</li>
+      <li>Subagents only read the first user message when they have a long task</li>
+      <li data-correct>Subagents don't inherit context, and the coordinator dropped the EU limit</li>
+    </ol>
+    <div class="explain">A subagent sees only its own system prompt and the Agent prompt. The constraint was in the coordinator's context and never reached the searchers. The fix is to repeat user constraints in every subagent prompt. C is invented: subagents don't see the user's messages at all.</div>
+  </div>
+
+  <div class="item" data-ts="2.3">
+    <div class="stem">Your synthesis subagent has access to all 18 tools in the system. It often starts fresh web searches in the middle of a synthesis and sometimes picks the wrong tool for simple checks. What should you do?</div>
+    <ol class="opts">
+      <li>Add a rule to its prompt saying that it must never search the web</li>
+      <li data-correct>Limit it to the tools its role needs, plus a scoped fact-check tool</li>
+      <li>Add a routing classifier that picks the right tool for each request</li>
+      <li>Rewrite all 18 tool descriptions so they are longer and more detailed</li>
+    </ol>
+    <div class="explain">Too many tools reduces selection reliability, and tools outside a role invite misuse. Scope the tool set to the role, and add a narrow cross-role tool for the frequent need. A is probabilistic, C over-engineers, and D still leaves 18 choices.</div>
+  </div>
+
+  <div class="item" data-ts="2.3">
+    <div class="stem">A document-analysis subagent has a generic <code>fetch_url</code> tool. It sometimes fetches unrelated pages and pages from untrusted domains. What is the best tool-design change?</div>
+    <ol class="opts">
+      <li>Ask the subagent in its prompt to fetch only the documents it needs</li>
+      <li>Log every fetch and review the logs at the end of each week for misuse</li>
+      <li data-correct>Replace fetch_url with load_document that validates document sources</li>
+      <li>Give the subagent a second tool that checks a URL before each fetch</li>
+    </ol>
+    <div class="explain">The guide's 2.3 skill: replace a generic tool with a constrained one that enforces valid inputs. A relies on the prompt, B detects misuse only after it has happened, and D adds a choice the agent can skip.</div>
+  </div>
+
+  <div class="item" data-ts="2.3">
+    <div class="stem">The synthesis agent often needs quick checks of dates and figures. Each check goes back through the coordinator to the search agent, adding 2–3 round trips. 85% of checks are simple and 15% need real investigation. What is the best approach?</div>
+    <ol class="opts">
+      <li data-correct>Give synthesis a scoped verify_fact tool; route deep checks via coordinator</li>
+      <li>Give the synthesis agent every web search tool the search agent has</li>
+      <li>Batch every check and send the batch to search after synthesis ends</li>
+      <li>Have the search agent pre-cache extra context around every source</li>
+    </ol>
+    <div class="explain">This is sample Q9. A scoped cross-role tool covers the frequent simple case, and complex cases still go through the hub. B brings back cross-role misuse, C delays every check, and D guesses at what synthesis will need.</div>
+  </div>
+
+  <div class="item" data-ts="1.2">
+    <div class="stem">For "What year was the WGA founded?", your coordinator still runs web search, document analysis, synthesis and report generation, taking 90 seconds. What should change?</div>
+    <ol class="opts">
+      <li>Run all four subagents in parallel so the full pipeline finishes faster</li>
+      <li data-correct>Have the coordinator assess the query and invoke only the agents it needs</li>
+      <li>Add a cache in front of the pipeline so that repeated questions are free</li>
+      <li>Use a smaller model for every subagent when the question looks short</li>
+    </ol>
+    <div class="explain">Task 1.2: coordinators should "dynamically select which subagents to invoke rather than always routing through the full pipeline". A single fact needs one searcher. A, C and D tune a pipeline the question doesn't need.</div>
+  </div>
+
+  <div class="item" data-ts="1.3">
+    <div class="stem">Your coordinator prompt is 14 numbered steps that say which subagent to call, with which query, in which order. When early results point somewhere unexpected, the system can't adapt. What does the guide recommend?</div>
+    <ol class="opts">
+      <li>Add more numbered steps to cover each of the unexpected branches</li>
+      <li>Move the procedure into code and remove the coordinator's discretion</li>
+      <li data-correct>State research goals and quality criteria instead of a fixed procedure</li>
+      <li>Let each subagent rewrite the procedure when its results look unusual</li>
+    </ol>
+    <div class="explain">Task 1.3: specify "research goals and quality criteria rather than step-by-step procedural instructions, to enable subagent adaptability." A can never cover every branch, B removes the adaptivity this task needs, and D breaks hub-and-spoke control.</div>
+  </div>
+
+  <div class="item" data-ts="1.2">
+    <div class="stem">Which <b>two</b> are reasons to route all subagent communication through the coordinator rather than letting subagents message each other? (Select 2)</div>
+    <ol class="opts">
+      <li data-correct>One place to observe and trace every exchange between agents</li>
+      <li>Subagents then share one context window, so they can read each other's work</li>
+      <li data-correct>Consistent error handling and recovery decisions in one place</li>
+      <li>It removes any need to pass findings explicitly in subagent prompts</li>
+      <li>Each subagent can then use the full tool set without causing conflicts</li>
+    </ol>
+    <div class="explain">The guide's 1.2 reasons are observability, consistent error handling and controlled information flow. B and D get context isolation backwards: routing through the hub is exactly why the coordinator has to pass findings explicitly. E contradicts scoped tool access.</div>
+  </div>
+
+  <div class="item" data-ts="1.4 · review">
+    <div class="stem">Policy says customer data exports need manager approval. The prompt states this clearly, but an audit finds 2% of exports ran without approval. What is the proportionate fix?</div>
+    <ol class="opts">
+      <li>Repeat the approval rule at both the start and the end of the prompt</li>
+      <li>Add few-shot examples of the agent asking for approval before exports</li>
+      <li data-correct>Block export_data in a PreToolUse hook until an approval is recorded</li>
+      <li>Have the agent rate its confidence that approval exists before exports</li>
+    </ol>
+    <div class="explain">A compliance rule with a measured skip rate needs deterministic enforcement: a prerequisite gate. A and B are still probabilistic, and D relies on self-reported confidence. Lesson 3, <a href="../reference/hooks-and-escalation.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="5.2 · review">
+    <div class="stem">"This is useless, I've been trying for ages!" writes a customer who wants to change a delivery address. The change is routine, and they haven't asked for a person. What should the agent do?</div>
+    <ol class="opts">
+      <li>Escalate to a human right away because the customer is clearly upset</li>
+      <li data-correct>Acknowledge the frustration and offer to make the change right now</li>
+      <li>Ask the customer to rate their frustration before choosing what to do</li>
+      <li>Make the change silently and avoid mentioning the customer's tone</li>
+    </ol>
+    <div class="explain">Frustration alone is not a trigger. Acknowledge it, resolve the issue, and escalate only if they ask for a human. A treats sentiment as complexity, C is absurd, and D skips the acknowledgement.</div>
+  </div>
+
+  <div class="item" data-ts="1.5 · review">
+    <div class="stem">Your returns tool reports <code>status: 4</code> and <code>created: 1790864520</code>. The agent sometimes tells customers a return is "pending" when 4 means "refunded", and it misreads dates. Where should the fix go?</div>
+    <ol class="opts">
+      <li>A system prompt table that maps each status code and explains epoch time</li>
+      <li data-correct>A PostToolUse hook mapping codes to labels and epochs to ISO 8601</li>
+      <li>A PreToolUse hook that asks the returns tool for a more readable format</li>
+      <li>A new decode_status tool that the agent calls whenever it sees a code</li>
+    </ol>
+    <div class="explain">Task 1.5: normalise heterogeneous formats in a PostToolUse hook, before the model reads the result. A and D still depend on the model converting correctly every time. C intercepts the call, but the problem is in the result. Lesson 3, <a href="../reference/hooks-and-escalation.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="2.1 · review">
+    <div class="stem">An agent has <code>search_orders</code> ("Searches orders") and <code>get_invoice</code> ("Gets invoice data"). It often calls <code>get_invoice</code> when customers ask about order status. What is the proportionate first step?</div>
+    <ol class="opts">
+      <li>Add a routing classifier that picks the tool before the agent runs</li>
+      <li>Merge both tools into a single order tool with a mode parameter</li>
+      <li>Add ten few-shot examples showing which tool fits each question</li>
+      <li data-correct>Expand both descriptions: purpose, inputs, returns, when not to use</li>
+    </ol>
+    <div class="explain">Minimal descriptions are the root cause of misrouting (sample Q2). Fix the descriptions first: what the tool does, input formats, what it returns, and when to use the sibling tool instead. A, B and C are heavier changes made before the cheap root-cause fix. Lesson 2, <a href="../reference/tool-design-and-errors.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="2.1 · review">
+    <div class="stem">One <code>analyze_document</code> tool is used to pull figures, write summaries and check claims against the source. The agent's inputs to it are inconsistent and outputs are hard to use. What tool-design change fits best?</div>
+    <ol class="opts">
+      <li data-correct>Split it into purpose-built tools, one per job, each with its own schema</li>
+      <li>Keep one tool and add a free-text "task" field describing what to do</li>
+      <li>Keep one tool and lengthen its description to cover every use case</li>
+      <li>Keep one tool and return all three outputs together on every call</li>
+    </ol>
+    <div class="explain">A generic tool with many jobs should be split by purpose (e.g. extract_data_points, summarize_content, verify_claim_against_source). Then each tool has a clear contract and selection is unambiguous. B and C keep the ambiguity, and D wastes context. Lesson 2.</div>
+  </div>
+
+  <div class="item" data-ts="2.2 · review">
+    <div class="stem">The payments API times out. Your MCP tool returns <code>isError: true</code> with the text "Operation failed". The agent sometimes retries forever and sometimes tells customers their card was declined. What should the tool return?</div>
+    <ol class="opts">
+      <li>A JSON-RPC protocol error so the client knows the tool call failed</li>
+      <li>A success result with an empty payment record and no error flag set</li>
+      <li data-correct>isError with category transient, isRetryable true and a clear message</li>
+      <li>isError with category business so the agent escalates to a human</li>
+    </ol>
+    <div class="explain">A uniform "Operation failed" hides what the agent needs to decide. A timeout is <b>transient</b> and retryable, so retry a bounded number of times, then say it's temporary. A uses the wrong channel (protocol errors are for malformed requests). B disguises a failure as success. D mislabels it, which causes needless escalation. Lesson 2.</div>
+  </div>
+
+</section>
+
+<div class="source"><span class="label">Primary source · read this next</span>
+<p style="margin:.3rem 0 0"><a href="https://www.anthropic.com/engineering/multi-agent-research-system"><b>How we built our multi-agent research system</b></a> (Anthropic Engineering). It's the system the exam's Scenario 3 is modelled on. Read the "Prompt engineering and evaluations" principles: delegation, effort scaling, parallelism. Then read <a href="https://code.claude.com/docs/en/agent-sdk/subagents">Subagents in the SDK</a> → "What subagents inherit" and "Tool restrictions", reread task statements 1.2, 1.3 and 2.3 in <code>md/CCAR-F/sections/07</code> and <code>08</code>, and sample questions 7 and 9. Cheat sheet: <a href="../reference/coordinator-and-subagents.html">reference/coordinator-and-subagents</a>.</p>
+</div>
+
+<p class="ask">Not sure whether a failure is the coordinator's fault or a subagent's? Ask me. "Which agent owns the root cause" is the core skill in Scenario 3. When you're done, paste your <code>l4:check</code> score and quiz summary line, plus three numbers: parallel vs sequential wall clock, and the source count in your LOSSY run with hooks on and off.</p>
+
+<div class="nav-lessons"><a href="0003-hooks-prerequisites-and-escalation.html">← Lesson 3 · Hooks, prerequisites and escalation</a><span>Next: Lesson 5 · Error propagation and provenance →</span></div>
+
+</article></main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coordinator and Subagents Reference</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main><article>
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Reference · TS 1.2, 1.3, 2.3</div>
+<h1>Coordinator &amp; subagents</h1>
+<p class="subtitle">One-page cheat sheet. Taught in <a href="../lessons/0004-coordinator-and-subagents.html">Lesson 4</a>.</p>
+
+<h2>Hub and spoke (1.2)</h2>
+<table>
+  <tr><th>Coordinator job</th><th>Good</th><th>Failure to spot</th></tr>
+  <tr><td>Decompose</td><td>Full breadth; distinct subtopics / source types per agent</td><td>Too narrow (sample Q7: only visual arts); duplicated work</td></tr>
+  <tr><td>Select</td><td>Effort scales to the query (1 fact → 1 searcher)</td><td>Always the full pipeline</td></tr>
+  <tr><td>Delegate</td><td>Complete prompts; parallel spawns in ONE response</td><td>One spawn per turn; vague prompts</td></tr>
+  <tr><td>Refine</td><td>Check synthesis for gaps → targeted re-delegation → re-synthesise</td><td>Accepts first output</td></tr>
+  <tr><td>Route</td><td>All subagent traffic via coordinator: observability, consistent errors, controlled flow</td><td>Subagents talking directly</td></tr>
+</table>
+<p>Root-cause rule: if every subagent did its assigned job well and the output is still wrong, the fault is in the <b>assignment</b> (the coordinator).</p>
+
+<h2>Context passing (1.3)</h2>
+<ul>
+  <li>Subagent sees: its <code>AgentDefinition.prompt</code> + the Agent call's <code>prompt</code> (+ tool defs, project CLAUDE.md). <b>Not</b> the parent's history, tool results or system prompt.</li>
+  <li>Repeat the user's constraints in every subagent prompt.</li>
+  <li>Synthesizer gets <b>complete findings, structured</b>: <code>{ claim, evidence, source: { id, publisher, published, page } }</code>. Prose summary = provenance lost.</li>
+  <li>Coordinator prompt = <b>goals + quality criteria</b>, not numbered steps. Each delegation: objective, output format, tools/sources, boundaries.</li>
+</ul>
+
+<h2>Agent SDK (TypeScript)</h2>
+<pre>query({ prompt, options: { tools: ["Agent"], allowedTools: ["Agent", "mcp__srv__*"],
+  agents: { searcher: { description, prompt, tools: ["mcp__srv__web_search"], model: "haiku" } } } })</pre>
+<table>
+  <tr><th>Exam says</th><th>SDK today (v0.3.289)</th></tr>
+  <tr><td>Task tool; allowedTools must include "Task"</td><td><code>Agent</code> in tool_use (<code>Task</code> in init list; alias still works). allowedTools = auto-approve</td></tr>
+  <tr><td>—</td><td>Subagents run in the background by default (<code>background: false</code> per agent); may nest (default depth 3)</td></tr>
+</table>
+<ul>
+  <li>Parallel = multiple Agent <code>tool_use</code> blocks in one assistant message.</li>
+  <li><code>tools</code> omitted → inherits every tool. Always list them.</li>
+  <li>Detect: <code>block.name === "Agent" || "Task"</code>; subagent messages carry <code>parent_tool_use_id</code>; subagent hook inputs carry <code>agent_id</code>, <code>agent_type</code>.</li>
+  <li>Hook on <code>Agent</code>: PreToolUse sees <code>{ subagent_type, description, prompt }</code>; PostToolUse <code>tool_response.content</code> = the subagent's final report.</li>
+</ul>
+
+<h2>Tool distribution (2.3)</h2>
+<table>
+  <tr><th>Pattern</th><th>Example</th></tr>
+  <tr><td>Role-scoped sets (4–5 tools, not 18)</td><td>synthesizer has no web_search</td></tr>
+  <tr><td>Constrained replaces generic</td><td><code>load_document</code> (validated library) instead of <code>fetch_url</code></td></tr>
+  <tr><td>Scoped cross-role tool for the frequent case</td><td><code>verify_fact</code> for 85% simple checks; deep ones via coordinator (sample Q9)</td></tr>
+</table>
+<p>Distractors: give the agent every tool; prompt rule "never search"; routing classifier; longer descriptions for 18 tools; batching checks to the end.</p>
+</article></main>
+</body>
+</html>
