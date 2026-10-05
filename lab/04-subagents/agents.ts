@@ -16,19 +16,26 @@ void TOOL;
 
 export const AGENTS: Record<string, AgentDefinition> = {
   searcher: {
-    description: "Searches the web.",
-    prompt: "You are a web researcher. Use web_search to research the subtopic you are given and report what you find.",
-    // tools: TODO
+    description: "Web researcher for ONE assigned subtopic or source type. Searches the cached web snapshot and returns findings with source URLs and publication dates. Spawn one per subtopic, in parallel.",
+    prompt: `You are a web researcher. Use web_search to research the ONE subtopic you are given, staying within any constraints in your task. Only use sources from trusted publications. 
+Return ONLY JSON, with each claim kept separate from its source details:
+{ "findings": [ { "claim": "<one sentence>", "evidence": "<exact quote from the source>",
+                  "source": { "id": "<url>", "publisher": "...", "published": "YYYY-MM-DD" } } ],
+  "gaps": ["<what you searched for and didn't find>"] }
+If nothing relevant turns up, return "findings": [] and explain in "gaps".`,
+    tools: [TOOL.web_search],
     model: "haiku",
   },
   "doc-analyst": {
-    description: "TODO",
-    prompt: "TODO",
+    description: "Analyst for reports and papers in the approved document library. Returns findings with doc_id and page numbers. Use when the topic needs evidence from long-form studies, not just news articles.",
+    prompt: "You are a document analist. Use the tools list_documents, load_document. For every claim, site the claim + source id + date, and keep the page numbers",
     model: "haiku",
+    tools: [TOOL.list_documents, TOOL.load_document],
   },
   synthesizer: {
-    description: "TODO",
-    prompt: "TODO",
+    description: "Writes the final cited brief from the findings passed in its prompt. It has no search tools, only verify_fact for quick checks. Use once, after research is complete, with the complete findings.",
+    prompt: "Your job is to synthesize findings from multiple sources provided to you. You are allowed to cite missing information. You check from the work and do not generate data. You need to cite sources for every claim, drop if they dont exist. You also need to check for conflicting values, ideas with the sources. Finally, report coverage gaps",
     model: "haiku",
+    tools: [TOOL.verify_fact],
   },
 };

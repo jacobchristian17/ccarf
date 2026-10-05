@@ -48,6 +48,9 @@ export const hubOnly: HookCallback = async (input) => {
 export const recordSources = (state: RunState): HookCallback => async (input) => {
   const post = input as PostToolUseHookInput;
   void post; void state;
+  for (const id of extractSourceIds(agentReport(post))) {
+    state.sourcesReturned.add(id);
+  }
   return {};
 };
 
@@ -60,7 +63,15 @@ export const recordSources = (state: RunState): HookCallback => async (input) =>
 //   • otherwise allow ({})
 export const requireCompleteBrief = (state: RunState): HookCallback => async (input) => {
   const pre = input as PreToolUseHookInput;
-  void pre; void state;
+  const { subagent_type, prompt = "" } = pre.tool_input as { subagent_type?: string; prompt?: string };
+  if (subagent_type !== "synthesizer") return {};
+  if (state.sourcesReturned.size === 0)
+    return deny("No findings have come back yet. Run the searcher / doc-analyst subagents first, then call the synthesizer with their findings.");
+  const cited = new Set(extractSourceIds(prompt));
+  const missing = [...state.sourcesReturned].filter(id => !cited.has(id));
+  if (missing.length)
+    return deny(`Subagents don't inherit your context: the synthesizer sees only this prompt. It is missing findings from ${missing.length} source(s): ${missing.join(", ")}. ` +
+      "Re-issue the call with the complete findings (claim, evidence, source id, publisher, date, page) from every subagent.");
   return {};
 };
 
