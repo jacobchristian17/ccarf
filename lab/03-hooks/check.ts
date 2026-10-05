@@ -1,6 +1,8 @@
 // Lesson 3 grader: calls your hook callbacks directly with synthetic SDK inputs. No model, no network.
 // Run:  npm run l3:check            (your hooks.ts + prompt.ts)
 //       npm run l3:check:solution   (reference)
+import { green, red } from "../shared/colors.js";
+
 const dir = process.argv[2] === "solution" ? "./solution/" : "./";
 const H = await import(`${dir}hooks.ts`);
 const { SYSTEM_PROMPT } = await import(`${dir}prompt.ts`);
@@ -84,7 +86,7 @@ for (const [title, checks] of groups) {
     let ok = false, err = "";
     try { ok = await fn(); } catch (e) { err = ` (threw: ${e instanceof Error ? e.message : String(e)})`; }
     if (ok) pass++;
-    console.log(`  ${ok ? "✓" : "✗"} ${name}${err}`);
+    console.log(ok ? green(`  ✓ ${name}`) : red(`  ✗ ${name}${err}`));
   }
 }
-console.log(`\n══ L3 check: ${pass}/${total}${pass === total ? " · all green" : ""}`);
+console.log((pass === total ? green : red)(`\n══ L3 check: ${pass}/${total}${pass === total ? " · all green" : ""}`));

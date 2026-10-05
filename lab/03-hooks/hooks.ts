@@ -5,7 +5,7 @@
 // Each callback gets (input, toolUseID, { signal }) and returns a HookJSONOutput.
 // Return {} to allow / leave unchanged. Hooks run in parallel and a single "deny" wins,
 // so write each one to stand alone.
-import type { HookCallback, HookCallbackMatcher, HookEvent, PostToolUseHookInput, PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
+import type { HookCallback, HookCallbackMatcher, HookEvent, HookJSONOutput, PostToolUseHookInput, PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
 import { AUTO_REFUND_LIMIT } from "../shared/store.js";
 
 /** Per-conversation state that the hooks share. One per session; never global. */
@@ -46,6 +46,18 @@ export const addContext = (note: string) => ({
 export const recordVerification = (state: SessionState): HookCallback => async (input) => {
   const post = input as PostToolUseHookInput;
   void post; void state;
+  const matches = resultJson(post)?.matches as Array<any> ?? [];
+  switch (matches.length) {
+    case 0:
+      state.verifiedCustomerId = null;
+      break;
+    case 1:
+      state.verifiedCustomerId = matches[0].id;
+      break;
+    default: // length is positive integer, so default always run at 2 or more matches
+      state.verifiedCustomerId = null;
+      return addContext("More than two customers are matched, ask the user again for exact email")
+  }
   return {};
 };
 
@@ -57,6 +69,14 @@ export const recordVerification = (state: SessionState): HookCallback => async (
 export const requireVerifiedCustomer = (state: SessionState): HookCallback => async (input) => {
   const pre = input as PreToolUseHookInput;
   void pre; void state;
+  const tool_name = shortName(pre.tool_name);
+  const blockedTools = ["lookup_order", "track_shipment", "process_refund"];
+
+  if (tool_name === "process_refund" && (pre.tool_input as any).customer_id !== state.verifiedCustomerId)
+    return deny("Verified user doesn't match with the customer_id being processed.")
+  else if (!state.verifiedCustomerId && blockedTools.includes(tool_name))
+    return deny(`${tool_name} is blocked until an exact customer is verified. Call get_customer with their email first`)
+
   return {};
 };
 
@@ -66,6 +86,11 @@ export const requireVerifiedCustomer = (state: SessionState): HookCallback => as
 export const enforceRefundLimit: HookCallback = async (input) => {
   const pre = input as PreToolUseHookInput;
   void pre; void AUTO_REFUND_LIMIT;
+  const allowedTools = ["process_refund"];
+  if (!allowedTools.includes(shortName(pre.tool_name))) return deny("Tool not allowed");
+  const amount = (pre.tool_input as any).amount;
+  if (!amount) return deny("No amount is being processed, ask the user to provide the amount for the refund");
+  else if (amount > AUTO_REFUND_LIMIT) return deny("The requests exceeds the auto refund limit. Redirect to escalate_to_human");
   return {};
 };
 
@@ -79,7 +104,24 @@ export const enforceRefundLimit: HookCallback = async (input) => {
 export const normalizeShipment: HookCallback = async (input) => {
   const post = input as PostToolUseHookInput;
   void post;
-  return {};
+  let response = resultJson(post);
+  if (response?.shipment === null) return response;
+
+  let { shipment } = response;
+  let label = "";
+  switch (shipment.status) {
+    case 1: label = "label_created"; break;
+    case 2: label = "picked_up"; break;
+    case 3: label = "in_transit"; break;
+    case 4: label = "out_for_delivery"; break;
+    case 5: label = "delivered"; break;
+    case 9: label = "exception"; break;
+    default: label = "unknown"; break;
+  }
+  const eta = (new Date(shipment.eta * 1000 ).toISOString());
+  const last_scan = (new Date(shipment.last_scan * 1000 ).toISOString());
+  response = { shipment: { ...shipment, status: label, eta, last_scan } }
+  return replaceOutput(response);
 };
 
 // ── Wiring (done for you). Matchers are regexes on the tool name: mcp__<server>__<tool>.

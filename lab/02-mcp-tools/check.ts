@@ -7,6 +7,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { green, red } from "../shared/colors.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const serverPath = path.resolve(here, process.argv[2] ?? "server.ts");
@@ -22,8 +23,8 @@ await client.connect(new StdioClientTransport({
 let passed = 0, total = 0;
 function check(label: string, ok: boolean, hint: string) {
   total++;
-  if (ok) { passed++; console.log(`  ✓ ${label}`); }
-  else console.log(`  ✗ ${label}\n      → ${hint}`);
+  if (ok) { passed++; console.log(green(`  ✓ ${label}`)); }
+  else console.log(red(`  ✗ ${label}\n      → ${hint}`));
 }
 
 type Payload = { errorCategory?: string; isRetryable?: unknown; message?: string; customerMessage?: string; [k: string]: unknown };
@@ -110,6 +111,6 @@ await expectError("process_refund 93-day-old order → business (OUTSIDE_WINDOW)
 await expectError("process_refund $1000 on an $89.50 order → validation, not retryable", "process_refund",
   { customer_id: "C-001", order_id: "12345", amount: 1000 }, "validation", false);
 
-console.log(`\n══ L2 check: ${passed}/${total} ${passed === total ? "· all green" : ""}`);
+console.log((passed === total ? green : red)(`\n══ L2 check: ${passed}/${total} ${passed === total ? "· all green" : ""}`));
 await client.close();
 process.exit(passed === total ? 0 : 1);
