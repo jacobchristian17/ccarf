@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decomposition, Sessions and Long Exploration</title>
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+</head>
+<body>
+<main><article>
+
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Lesson 6 of 13 · Domain 1 (27%) and Domain 5 (15%)</div>
+<h1>Decomposition, sessions and long exploration</h1>
+<p class="subtitle">Long tasks fail in three places: how the work is split up, which context you carry forward, and what happens when the context runs out or the process dies. Each one has an exam-grade answer, and they all come down to deciding what the next agent starts from.</p>
+
+<div class="meta">
+  <span><b>Task statements</b> 1.6 · 1.7 · 5.4</span>
+  <span><b>Time</b> ~12 min read · ~50 min build · ~12 min quiz</span>
+  <span><b>Scenarios</b> Developer Productivity · Code Generation · Multi-Agent Research</span>
+</div>
+
+<details class="recall">
+  <summary>Warm-up: Lesson 5 retrieval, then a prediction</summary>
+  <div>From memory: (1) Name the four ways a subagent can report a timeout, and say which one the guide picks. (2) A searcher finds nothing for "dance". Which status should it report, and why does it matter? (3) In the Lesson 5 runs, which hop lost the source URLs?<br>
+  Then predict: a Haiku session reads 9 files and analyses a refund flow. A teammate then changes 2 of those files. You resume the session and ask a follow-up, <em>without</em> saying anything changed. How many files does it re-read before answering? And when you fork that session twice to compare two test strategies, how many files does each fork re-read? §5 has what we saw.</div>
+</details>
+
+<h2>1 · Two ways to decompose (1.6)</h2>
+
+<div class="table-wrap"><table>
+  <tr><th></th><th>Fixed sequential pipeline (prompt chaining)</th><th>Dynamic adaptive decomposition</th></tr>
+  <tr><td><b>Use when</b></td><td>The steps are known in advance: a predictable, multi-aspect review</td><td>The task is open-ended, and what comes next depends on what you find</td></tr>
+  <tr><td><b>Shape</b></td><td>Step 1 → step 2 → step 3, with code checks between steps if you want them</td><td>Map, then pick high-impact areas, then a prioritised plan that changes as dependencies turn up</td></tr>
+  <tr><td><b>Guide's example</b></td><td>Review each file on its own, then run a cross-file integration pass</td><td>"Add comprehensive tests to a legacy codebase"</td></tr>
+</table></div>
+
+<p>Anthropic's own framing is the same. Prompt chaining suits tasks that "can be easily and cleanly decomposed into fixed subtasks", and it trades latency for accuracy. Orchestrator-workers suits "complex tasks where you can't predict the subtasks needed".<span class="sn-ref"></span><span class="sidenote"><a href="https://www.anthropic.com/engineering/building-effective-agents">Building Effective AI Agents</a>, "Workflow: Prompt chaining" and "Workflow: Orchestrator-workers". Task statement 1.6, <code>md/CCAR-F/sections/07</code>.</span></p>
+
+<p><b>Why per-file plus integration?</b> A single pass over many files suffers <b>attention dilution</b>: depth becomes uneven, obvious bugs get missed, and the same pattern gets flagged in one file and passed in another. The fix has two halves:</p>
+<ul>
+  <li><b>Per-file local passes</b>, each seeing only its own file. They find local issues consistently.</li>
+  <li><b>One integration pass</b> that receives the per-file <em>findings</em>, not the raw source again, and looks only for cross-file problems: data flow, and contracts one module assumes about another.</li>
+</ul>
+<p>Keep Lesson 4 in mind: sample Q7's narrow decomposition (creative industries split into three visual-arts subtasks) is a 1.2 failure that shows up as a decomposition problem. When the subagents all succeed and the coverage is still wrong, look at what they were <em>assigned</em>.</p>
+
+<h2>2 · Sessions: resume, fork, or start fresh (1.7)</h2>
+
+<div class="table-wrap"><table>
+  <tr><th>Situation</th><th>Move</th></tr>
+  <tr><td>Prior context is mostly valid, and you're continuing yesterday's investigation</td><td><b>Resume</b> the named session: <code>claude --resume refund-analysis</code></td></tr>
+  <tr><td>…but a few files changed since then</td><td>Resume, and <b>say which files changed</b> so it re-analyses only those, not the whole codebase</td></tr>
+  <tr><td>Most of what it read is now stale</td><td><b>Start fresh with an injected structured summary</b>. Resuming would bring back stale tool results that the model trusts</td></tr>
+  <tr><td>Two divergent approaches from one shared analysis</td><td><b>fork_session</b>: each branch keeps the baseline, and the original stays unchanged</td></tr>
+</table></div>
+
+<p>The failure behind this table: a resumed session's earlier tool results are still in context and look just as authoritative as they did yesterday. The model has no idea the files moved under it. The SDK docs suggest the same alternative the guide does: "capture the results you need (analysis output, decisions, file diffs) as application state and pass them into a fresh session's prompt. This is often more robust than shipping transcript files around."<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/agent-sdk/sessions">Agent SDK → Work with sessions</a>, "Resume across hosts" and "Fork to explore alternatives". Task statement 1.7.</span></p>
+
+<div class="callout warn"><span class="label">What a fork does and doesn't share</span>
+A fork copies the <b>conversation history</b>. It doesn't copy the filesystem. In the docs' words: "If a forked agent edits files, those changes are real and visible to any session working in the same directory." For branches that each edit code, give each one its own worktree, or use file checkpointing.</div>
+
+<h2>3 · Long exploration without losing the thread (5.4)</h2>
+
+<p><b>The symptom to recognise:</b> late in a long session, answers turn inconsistent and refer to "typical patterns" instead of the specific classes found earlier. Anthropic calls the mechanism <em>context rot</em>: "as the number of tokens in the context window increases, the model's ability to accurately recall information from that context decreases."<span class="sn-ref"></span><span class="sidenote"><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">Effective context engineering for AI agents</a>: context rot, compaction, structured note-taking, sub-agent architectures.</span></p>
+
+<div class="table-wrap"><table>
+  <tr><th>Technique</th><th>What it does</th></tr>
+  <tr><td><b>Scratchpad file</b></td><td>The agent records key findings outside the context window and reads them back for later questions. Anthropic's term is "structured note-taking", for example "maintaining a NOTES.md file"</td></tr>
+  <tr><td><b>Subagent delegation</b></td><td>Verbose discovery ("find all test files", "trace refund flow dependencies") runs in a clean context. The main agent gets back a summary and keeps the high-level view</td></tr>
+  <tr><td><b>Phase summaries</b></td><td>Summarise phase N's key findings and inject them into the initial context of the subagents for phase N+1</td></tr>
+  <tr><td><b>Manifest for crash recovery</b></td><td>Each agent exports structured state to a known location. On resume, the coordinator loads a manifest and injects that state into the agents' prompts</td></tr>
+  <tr><td><b><code>/compact</code></b></td><td>Summarises the conversation so far to free context while discovery output piles up. It takes optional focus instructions</td></tr>
+</table></div>
+
+<p>Anthropic's long-running-harness post builds the same pattern: a progress file plus git history so each new context window "get[s] up to speed", and a JSON feature list because "the model is less likely to inappropriately change or overwrite JSON files compared to Markdown files". That's the argument for a structured manifest over free-text notes.<span class="sn-ref"></span><span class="sidenote"><a href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents">Effective harnesses for long-running agents</a>. <code>/compact [instructions]</code>: <a href="https://code.claude.com/docs/en/commands">Commands</a>.</span></p>
+
+<div class="callout exam"><span class="label">Exam answer vs current reality</span>
+<div class="vs">
+  <div><h4>Exam (1.7, 5.4)</h4><code>--resume &lt;session-name&gt;</code> continues a named session. <code>fork_session</code> creates independent branches. <code>/compact</code> reduces context use. Manifests are your own design: agents export state, and the coordinator loads it on resume.</div>
+  <div><h4>Today (CLI 2.1.289, SDK v0.3.289)</h4>Name a session with <code>-n</code> / <code>/rename</code>. In the SDK, <code>title</code> sets the name, and we checked that <code>claude -r refund-analysis</code> found an SDK session by that title. Forking is <code>--fork-session</code> on the CLI, <code>forkSession: true</code> with <code>resume</code> in TS (Python: <code>fork_session=True</code>), or the standalone <code>forkSession(id)</code> function. Interactive mode adds <code>/branch</code> (switch into a copy) and <code>/fork</code> (a background copy).</div>
+</div>
+The concepts are the same on both sides. If an option says <code>fork_session</code>, read it as "fork from a shared baseline".<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/cli-reference">CLI reference</a>: <code>--resume</code> "by ID or name", <code>--name</code>, <code>--fork-session</code>. SDK types: <code>sdk.d.ts</code> <code>Options.forkSession</code>, <code>Options.title</code>, <code>forkSession()</code>.</span></div>
+
+<h2>4 · Build: manifests, a session planner, a review chain</h2>
+
+<p>The lab is <code>lab/06-sessions/</code>, built around a small fictional payments repo (<code>fixture/refundly</code>) with a deliberately non-idempotent ledger, a fragile nightly settlement job and one test file. Your code goes in three places:</p>
+<pre><b>explore</b>   code coordinator: mapper → refund-tracer → test-finder → planner (Haiku, read-only + scratchpad)
+          after each agent → <b>your writeState()</b> → state/&lt;agent&gt;.json + manifest.json        (TODO 1)
+          before each agent → <b>your loadManifest() + buildResumeContext()</b> → its prompt
+<b>session</b> → <b>change small|big</b> → <b>followup</b>: <b>your planSession()</b> = resume + change notice, or fresh + summary  (TODO 2)
+<b>fork</b>      two forkSession branches from the baseline, then resume the untouched original
+<b>review</b>    <b>your reviewChain()</b>: per-file passes in parallel → one integration pass   ·   <b>your EXPLORER_PROMPT</b>  (TODO 3)</pre>
+
+<div class="callout warn"><span class="label">Commands (PowerShell, in lab/)</span>
+<pre>cd C:\Users\wsenr\repos\ccarf\lab
+npm run l6:check                          <span class="c"># grader: 57 checks, ~1 s</span>
+npm run l6:ask -- explore                 <span class="c"># $env:CRASH_AFTER="2" to crash · $env:RESET="1" to wipe .work/</span>
+npm run l6:ask -- session                 <span class="c"># baseline, titled "refund-analysis" (resets the repo copy)</span>
+npm run l6:ask -- change small            <span class="c"># or: change big</span>
+npm run l6:ask -- followup                <span class="c"># $env:FORCE="resume" or "fresh" overrides your plan</span>
+npm run l6:ask -- fork
+npm run l6:ask -- review
+$env:SOLUTION="1"                         <span class="c"># reference files</span>
+Remove-Item Env:CRASH_AFTER, Env:RESET, Env:FORCE, Env:SOLUTION -ErrorAction SilentlyContinue</pre>
+Runs take 10–170 s on Haiku. Each prints a trace: files read, injected context size, and checks for stale answers.</div>
+
+<ol class="steps">
+  <li><b>Baseline: stale resume.</b> <code>npm run l6:check</code> (expect 13/57). Run <code>session</code>, then <code>change small</code>, then <code>followup</code> with the starter. It always resumes and says nothing. Read the trace: how many files did it re-read, and does the answer name <code>postCredit</code> (old) or <code>postRefundCredit</code> (current)?</li>
+  <li><b>Baseline: crash.</b> <code>$env:RESET="1"; $env:CRASH_AFTER="2"</code>, run <code>explore</code>, then clear both and run it again. Does the rerun skip the two finished agents? What does the planner get from earlier phases?</li>
+  <li><b>TODO 1: state + manifest</b> (<code>state.ts</code>). Tighten <code>AgentState</code>, then write <code>writeState</code> (validate, atomic write, update the manifest), <code>loadManifest</code> and <code>buildResumeContext</code>. Note the rule that every finding cites a file the agent actually Read: <code>run.ts</code> fills <code>filesRead</code> from real tool calls, not from what the model says.</li>
+  <li><b>TODO 2: <code>planSession</code></b> (<code>freshness.ts</code>). Diff the hashes. If ≤ 50% is stale, resume with a notice naming each changed file. Otherwise start fresh with a structured summary that tags stale findings.</li>
+  <li><b>TODO 3: <code>reviewChain</code> + <code>EXPLORER_PROMPT</code></b> (<code>decompose.ts</code>). Get <code>l6:check</code> to 57/57.</li>
+  <li><b>Live, round 2.</b> Re-run steps 1 and 2 with your code: <code>session</code>, <code>change small</code>, <code>followup</code>, then a new <code>session</code>, <code>change big</code>, <code>followup</code> (it should choose FRESH), then the crash-and-resume <code>explore</code>. Then run <code>fork</code> and <code>review</code>.</li>
+  <li><b>Stretch.</b> Open <code>.work/refundly/SCRATCHPAD.md</code> after an explore run. How long is it, and what would a 2-hour session do to it? Decide where curation belongs: the agent prompt ("replace, don't append, a line about the same fact"), or a compaction step between phases.</li>
+</ol>
+
+<h2>5 · What we observed (2026-10-05, Haiku 4.5 agents, SDK v0.3.289)</h2>
+<details class="recall">
+  <summary>Prediction check: stale resume (small change, no notice)</summary>
+  <div><b>0 files re-read.</b> In 8.9 s the resumed session answered confidently with the <em>old</em> code: "<code>postCredit</code> … Is it safe to call twice? NO". Both parts were wrong, because the code now has an idempotent <code>postRefundCredit</code>. The earlier tool results were still in context, and nothing suggested they were stale. After <code>change big</code> with <code>FORCE=resume</code> it happened again: 0 re-reads, old function names, and no mention of the event-driven rewrite.<br>
+  (A note on method: our first draft of the follow-up question said "as the code is NOW", and with that wording the model did re-read. A real user doesn't word questions that way, so the lab now asks neutrally. The notice has to carry that information.)</div>
+</details>
+<details class="recall">
+  <summary>Reference planSession: resume with notice (small) · fresh with summary (big)</summary>
+  <div><b>Small:</b> RESUME with a notice naming 2 files. It re-read <b>exactly those 2</b> and answered correctly (<code>postRefundCredit</code>, idempotent, with the key format), and it flagged that two refunds of the same amount would collide on the key. 12.4 s.<br>
+  <b>Big:</b> 7 of 9 files stale → FRESH. The injected summary was 5,238 chars, with 17 of 19 findings tagged <code>[STALE … re-verify]</code>. The new session found <code>refund-worker.ts:14</code>, a file the old session had never seen, and answered correctly.</div>
+</details>
+<details class="recall">
+  <summary>Prediction check: fork</summary>
+  <div>Both forks (unit tests with mocks, and integration tests on the real ledger) re-read <b>0 files</b> and built on the shared analysis. They got distinct session ids. When the original was resumed afterwards it kept its id and replied "We haven't chosen one yet". Neither fork had touched it. 55 s in total.</div>
+</details>
+<details class="recall">
+  <summary>Explore with CRASH_AFTER=2: starter vs reference</summary>
+  <div><b>Starter:</b> no manifest, so the rerun started from scratch and ran all four agents again (165 s, <b>38</b> file reads, no injected context). Every agent re-explored the same 9 files.<br>
+  <b>Reference:</b> the refund-tracer got 3,321 chars of mapper state. The rerun skipped 2 agents, test-finder got 6,773 chars, and the planner got 9,356 chars and read only <b>2</b> files, yet named 6 of 6 specific functions. 105 s, 12 reads.<br>
+  <b>Two things that weren't ideal.</b> (1) The planner cited <code>SCRATCHPAD.md:73</code> instead of <code>refund-service.ts</code>. That passed the "cite files you read" rule, because it had read the scratchpad, but provenance is now one hop from the code. That's the Lesson 5 problem again, with a notes file as the summarization step. (2) The scratchpad reached 92 finding lines in one run. Append-only notes need curation, or they become the next source of context rot.</div>
+</details>
+<details class="recall">
+  <summary>Review chain: single pass vs per-file + integration</summary>
+  <div>Single pass (starter, 26 s): it caught the non-idempotent credit and <b>missed</b> settlement's dependency on the ledger entry shape. Chain (reference, 9 steps, 48 s): it caught both, and found local issues in the per-file passes. <b>Caveat:</b> the fixture has 8 small files, so dilution is mild here. The guide's scenario is a 14-file PR, and the gap grows with size. The integration pass also cited line numbers it never saw (it only gets findings), so an integration pass can only be as good as the per-file findings it receives.</div>
+</details>
+<details class="recall">
+  <summary>Reference solution</summary>
+  <div><code>lab/06-sessions/solution/</code>, graded by <code>npm run l6:check:solution</code> (57/57). Run it live with <code>$env:SOLUTION="1"</code>.</div>
+</details>
+
+<h2>6 · Scenario check</h2>
+<p>Ten new items, then six spaced-review items: three from Lesson 5 and three from Lesson 4. Commit to an answer before you click.</p>
+
+<section class="quiz" data-quiz="0006-decomposition-sessions-and-long-exploration">
+
+  <div class="item" data-ts="1.6">
+    <div class="stem">A review agent gets a 14-file pull request in one prompt. Its comments are detailed on some files and shallow on others. It misses an obvious null dereference, and it flags a pattern in one file while approving the same pattern in another. What is the best restructuring?</div>
+    <ol class="opts">
+      <li>Switch to a model with a larger context window for the reviews</li>
+      <li data-correct>Review each file in its own pass, then run one cross-file pass</li>
+      <li>Run the same full review three times and keep the majority view</li>
+      <li>Add an instruction to review every file with equal, careful depth</li>
+    </ol>
+    <div class="explain">This is attention dilution. Per-file local passes give consistent depth, and a separate integration pass catches cross-file issues. A doesn't change how attention spreads across the input. C triples the cost and keeps the dilution. D asks for the behaviour without changing the structure that causes the problem.</div>
+  </div>
+
+  <div class="item" data-ts="1.6">
+    <div class="stem">You're asked to "add comprehensive tests to a legacy codebase" of about 400 files with almost no tests. Which decomposition fits best?</div>
+    <ol class="opts">
+      <li>A fixed chain that writes tests for every file in alphabetical order</li>
+      <li>One subagent per file, all spawned in parallel straight away</li>
+      <li data-correct>Map the structure, find high-impact areas, then plan and adapt</li>
+      <li>Write tests first for whichever files changed most recently in git</li>
+    </ol>
+    <div class="explain">Open-ended tasks call for dynamic decomposition. Map the structure, identify high-impact areas, and create a prioritised plan that adapts as dependencies are discovered. A and B are fixed plans for a task whose subtasks you can't predict, and B also floods the coordinator with 400 results. D uses a proxy for importance that may not track risk.</div>
+  </div>
+
+  <div class="item" data-ts="1.6">
+    <div class="stem">Every week, each new vendor contract has to be checked against the same six clauses: liability, termination, data handling, payment terms, IP and jurisdiction. Which pattern fits best?</div>
+    <ol class="opts">
+      <li data-correct>A fixed sequential pipeline with one step for each clause check</li>
+      <li>A dynamic plan that the agent works out from each contract's text</li>
+      <li>A coordinator that decides at run time which clauses are relevant</li>
+      <li>A single open-ended prompt asking the agent to review the contract</li>
+    </ol>
+    <div class="explain">The steps are known in advance and the same every time, so prompt chaining fits: predictable, multi-aspect, and easy to check between steps. B and C add adaptivity the task doesn't need, which means more variance and more cost. D loses the structure that makes the review consistent.</div>
+  </div>
+
+  <div class="item" data-ts="1.6">
+    <div class="stem">Your review chain has per-file passes followed by an integration pass. The integration prompt contains every file's full source <em>and</em> all the per-file findings, and its output is as shallow as the old single-pass review. What change helps most?</div>
+    <ol class="opts">
+      <li>Add a second integration pass that reviews the first one's output</li>
+      <li data-correct>Give it the per-file findings, not the source, and a cross-file focus</li>
+      <li>Remove the per-file passes, since the integration pass sees it all</li>
+      <li>Run the integration pass first, so per-file passes can build on it</li>
+    </ol>
+    <div class="explain">Putting the full source back into the integration prompt recreates the dilution you split the review to avoid. The integration pass should work from the structured per-file findings and look only for cross-file problems (data flow, contracts). A adds cost without fixing the input. C goes back to a single pass. D reverses the dependency.</div>
+  </div>
+
+  <div class="item" data-ts="1.7">
+    <div class="stem">Yesterday you spent two hours in a session named <code>billing-audit</code> analysing a billing module. Overnight, a teammate changed 2 of the 30 files that session read. What is the best way to continue?</div>
+    <ol class="opts">
+      <li>Start a new session and have it explore the billing module again</li>
+      <li>Resume <code>billing-audit</code> and continue, since most files are unchanged</li>
+      <li data-correct>Resume <code>billing-audit</code> and say which 2 files changed, for a re-read</li>
+      <li>Resume <code>billing-audit</code> and ask it to re-read all 30 files first</li>
+    </ol>
+    <div class="explain">The prior context is mostly valid, so resume the session, and tell it about the specific changes so it re-analyses only those files. A throws away two hours of valid work. B leaves stale tool results that the model will trust: in our lab it re-read nothing and confidently described the old code. D re-explores everything when only 2 files need it.</div>
+  </div>
+
+  <div class="item" data-ts="1.7">
+    <div class="stem">After a large refactor that changed most of the files an earlier session analysed, you resume it. Its answers now refer to functions that no longer exist. What should you have done?</div>
+    <ol class="opts">
+      <li>Resume it anyway and correct each stale answer as it comes up</li>
+      <li>Fork the old session so that the stale analysis stays intact</li>
+      <li>Run /compact on the old session before asking any new question</li>
+      <li data-correct>Start fresh, injecting a structured summary of the prior findings</li>
+    </ol>
+    <div class="explain">When prior tool results are mostly stale, a new session with an injected structured summary is more reliable than resuming. The summary carries the conclusions, with the stale ones flagged for re-verification. A puts the job on you. B copies the stale context into a new branch. C compresses the stale results but they're still there, and still stale.</div>
+  </div>
+
+  <div class="item" data-ts="1.7">
+    <div class="stem">A session has finished a detailed analysis of a legacy module. You want to compare two refactoring approaches, strangler-fig and a full rewrite, each building on that same analysis without affecting the other. What fits best?</div>
+    <ol class="opts">
+      <li data-correct>Fork the analysed session twice, one branch per refactoring approach</li>
+      <li>Resume the analysed session and explore both approaches in sequence</li>
+      <li>Start two new sessions and have each redo the module analysis first</li>
+      <li>Ask the analysed session to compare both approaches in one answer</li>
+    </ol>
+    <div class="explain"><code>fork_session</code> creates independent branches from a shared baseline. Each keeps the analysis, and neither affects the other or the original. B contaminates the second approach with the first. C repeats the analysis. D gives neither approach a full exploration. In our lab, both forks re-read 0 files.</div>
+  </div>
+
+  <div class="item" data-ts="5.4">
+    <div class="stem">Three hours into exploring a large codebase, the agent's answers drift. It describes "a typical repository pattern" instead of the <code>LedgerGateway</code> class it traced an hour ago, and it contradicts an earlier finding. What is the most effective change?</div>
+    <ol class="opts">
+      <li>Repeat the original task instructions at the start of every prompt</li>
+      <li data-correct>Have the agent record findings in a scratchpad and consult it later</li>
+      <li>Switch to a model with a larger context window and keep on going</li>
+      <li>Restart the exploration from scratch whenever answers start drifting</li>
+    </ol>
+    <div class="explain">This is context degradation. A scratchpad file keeps key findings outside the context window, and the agent references it for later questions. A re-sends instructions but not findings. C delays context rot rather than preventing it. D throws away the work, and the degradation returns.</div>
+  </div>
+
+  <div class="item" data-ts="5.4">
+    <div class="stem">A six-agent codebase-analysis pipeline crashes after the third agent finishes. On restart, the coordinator runs all six from scratch, and the later agents never see what the first three found. What fixes both problems?</div>
+    <ol class="opts">
+      <li>Retry each agent automatically until the whole pipeline finally succeeds</li>
+      <li>Run all six agents in parallel so a crash interrupts less of the work</li>
+      <li data-correct>Agents export state to a known location; the coordinator loads a manifest</li>
+      <li>Keep the coordinator's full conversation and resume that session instead</li>
+    </ol>
+    <div class="explain">Structured state persistence: each agent exports its state, and the coordinator loads a manifest on resume and injects it into the remaining agents' prompts. That handles both recovery and handoff. A doesn't fix either problem. B breaks the phase dependencies. D depends on one transcript surviving, and it doesn't give the subagents the earlier findings.</div>
+  </div>
+
+  <div class="item" data-ts="5.4">
+    <div class="stem">Exploring a monorepo, the main agent's context fills with long Grep and Glob output from discovery work, and its coordination gets worse. Which <b>two</b> actions address this? (Select 2)</div>
+    <ol class="opts">
+      <li data-correct>Delegate discovery questions to subagents that return summaries</li>
+      <li>Restate the overall goal more forcefully in the system prompt</li>
+      <li data-correct>Use /compact to summarise the verbose discovery output so far</li>
+      <li>Raise max_tokens so the agent can write longer final answers</li>
+      <li>Disable the Grep tool so that discovery uses only Read calls</li>
+    </ol>
+    <div class="explain">Subagents keep verbose exploration in their own clean contexts and return condensed summaries. <code>/compact</code> frees context that discovery output has filled. B doesn't remove any tokens. D affects output length, not context. E makes discovery slower and noisier.</div>
+  </div>
+
+  <div class="item" data-ts="5.3 · review">
+    <div class="stem">A patent-search subagent hits a rate limit on two of its five queries. It decides on its own to drop those two subtopics and returns <code>status: "complete"</code> with three findings. The final report never mentions them. What should it have done?</div>
+    <ol class="opts">
+      <li>Abort the research run so a human can deal with the rate limit</li>
+      <li>Keep retrying the two failed queries until they eventually succeed</li>
+      <li data-correct>Return partial results and the structured error to the coordinator</li>
+      <li>Swap in two other subtopics that it was able to search successfully</li>
+    </ol>
+    <div class="explain">The subagent made a recovery decision that belongs to the coordinator, and it hid the failure as success. It should report <code>partial</code> with failure type, attempted queries and alternatives, so the coordinator can re-delegate or annotate the gap. A terminates the run, B can hang, and D changes the scope without telling anyone. Lesson 5, <a href="../reference/errors-and-provenance.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="5.6 · review">
+    <div class="stem">The synthesis agent's brief cites a source for every claim. The coordinator then writes the final answer for the user, and the citations become "(industry sources)". Where is the fix?</div>
+    <ol class="opts">
+      <li>In the searchers, which should return more detailed source metadata</li>
+      <li data-correct>In the final hop, which must keep the claim–source mapping it receives</li>
+      <li>In synthesis, which should send fewer claims so each can be cited</li>
+      <li>In the user-facing UI, which should show a full bibliography at the end</li>
+    </ol>
+    <div class="explain">Attribution is lost at summarization steps, and the coordinator's rewrite is one. The mappings reached it intact, so the fix belongs at that hop (a prompt rule, or a check on the final text). A and C fix stages that worked. D lists sources without linking them to claims. Lesson 5.</div>
+  </div>
+
+  <div class="item" data-ts="5.1 · review">
+    <div class="stem">A support agent calls <code>lookup_order</code> several times per conversation. Each call returns about 45 fields, including warehouse codes and carrier internals, and the task needs about 5. Long conversations start losing track of what the customer asked. What is the best first change?</div>
+    <ol class="opts">
+      <li>Summarise the whole conversation after every third order lookup</li>
+      <li>Move to a model with a larger context window for the long chats</li>
+      <li>Ask the agent to ignore any fields it judges to be irrelevant</li>
+      <li data-correct>Trim each tool result to the relevant fields before it builds up</li>
+    </ol>
+    <div class="explain">Task 5.1: trim verbose tool output to the fields the task needs before it accumulates in context. A loses detail through repeated summarisation. B delays the problem. C still pays for every token and relies on the model to filter. Lesson 5, <a href="../reference/errors-and-provenance.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="1.3 · review">
+    <div class="stem">A coordinator spends ten turns finding which three contracts are relevant. It then spawns an analysis subagent with the prompt "Analyse the relevant contracts for risk". The subagent analyses the wrong contracts. What is the cause?</div>
+    <ol class="opts">
+      <li>The subagent's model is too small to work out which contracts matter</li>
+      <li data-correct>Subagents don't inherit the coordinator's history; pass the context</li>
+      <li>The subagent's tool set is missing a contract search capability</li>
+      <li>The coordinator should have run the analysis itself instead of delegating</li>
+    </ol>
+    <div class="explain">A subagent receives only its definition and the prompt it is given. It doesn't see the coordinator's conversation. The prompt must say which contracts and why. A and C fix the subagent, D gives up on delegation. Lesson 4, <a href="../reference/coordinator-and-subagents.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="1.2 · review">
+    <div class="stem">Asked about "AI in healthcare", a coordinator spawns subagents for diagnostic imaging, radiology workflows and pathology slides. Each returns excellent work, but the final report has nothing on drug discovery, administration or patient-facing tools. What is the root cause?</div>
+    <ol class="opts">
+      <li>The searchers' queries were too narrow within each assigned area</li>
+      <li>The synthesis agent dropped the sections it considered less relevant</li>
+      <li data-correct>The coordinator's decomposition only covered image-based diagnosis</li>
+      <li>The healthcare corpus lacks sources on the missing application areas</li>
+    </ol>
+    <div class="explain">The subagents did what they were assigned, and the assignments covered only one slice of the topic. This is the sample Q7 pattern. A, B and D blame agents or data that were working correctly. Lesson 4.</div>
+  </div>
+
+  <div class="item" data-ts="2.3 · review">
+    <div class="stem">A ticket-drafting subagent often needs a customer's plan tier, and goes back through the coordinator each time. Logs show that 90% of these are simple lookups and 10% need a full account investigation. What is the best change?</div>
+    <ol class="opts">
+      <li>Give the drafting agent every account tool so it never has to return</li>
+      <li data-correct>Give it a scoped plan-tier lookup tool; route the rest via the coordinator</li>
+      <li>Have the coordinator preload every account field into each draft prompt</li>
+      <li>Batch all lookups and return them to the coordinator at the end of drafting</li>
+    </ol>
+    <div class="explain">Least privilege for the common case: a scoped tool covers the frequent simple need, and complex cases keep the existing coordination path. A over-provisions, C floods the context with guessed data, and D blocks the drafts that depend on the answers. Lesson 4.</div>
+  </div>
+
+</section>
+
+<div class="source"><span class="label">Primary source · read this next</span>
+<p style="margin:.3rem 0 0"><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"><b>Effective context engineering for AI agents</b></a> (Anthropic Engineering). Read the sections on context rot, compaction, structured note-taking and sub-agent architectures. They are the reasoning behind every 5.4 skill. Then read <a href="https://code.claude.com/docs/en/agent-sdk/sessions">Agent SDK → Work with sessions</a> (resume, fork, and "Don't rely on session resume") and reread task statements 1.6, 1.7 and 5.4 in <code>md/CCAR-F/sections/07</code> and <code>11</code>. Cheat sheet: <a href="../reference/sessions-and-exploration.html">reference/sessions-and-exploration</a>.</p>
+</div>
+
+<p class="ask">If you're unsure where the line between "resume" and "start fresh" falls in a real situation, or how you'd build a manifest into your own pipelines, ask me. When you're done, paste your <code>l6:check</code> score and the quiz summary line, plus three numbers from your runs: files re-read on the stale resume, files re-read with your change notice, and file reads in the crash-resume explore run.</p>
+
+<div class="nav-lessons"><a href="0005-error-propagation-and-provenance.html">← Lesson 5 · Error propagation and provenance</a><span>Next: Lesson 7 · CLAUDE.md, rules, commands and skills →</span></div>
+
+</article></main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

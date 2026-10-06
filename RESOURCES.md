@@ -66,6 +66,7 @@ Verified 2026-10-01: every URL below returned HTTP 200 (after redirects) and its
   `allowed_tools`/`disallowed_tools` (TS: `allowedTools`/`disallowedTools`), permission modes, evaluation order. Use for: 1.3, 1.5, 2.3.
 - [Sessions — Claude Code Docs](https://code.claude.com/docs/en/agent-sdk/sessions)
   `resume` and `fork_session` (TS: `forkSession`), and reading `session_id` from the result message. Use for: 1.7.
+  Re-checked 2026-10-05: says a fork branches "the conversation history, not the filesystem", and under "Resume across hosts" recommends passing captured results into a fresh session's prompt as "often more robust" than resuming transcripts (the exam's "fresh + summary" answer). The standalone `forkSession(id)` and `title` option are in the SDK types (v0.3.289). We verified that `claude -r <title>` resumes an SDK-titled session.
 - [Python SDK reference — Claude Code Docs](https://code.claude.com/docs/en/agent-sdk/python) · [TypeScript SDK reference](https://code.claude.com/docs/en/agent-sdk/typescript)
   Every option name, including the casing differences between Python and TS. Use for: 1.3, 1.5, 1.7.
 - [Migration guide (Claude Code SDK → Claude Agent SDK) — Claude Code Docs](https://code.claude.com/docs/en/agent-sdk/migration-guide)

@@ -42,7 +42,13 @@
 .quiz button.linkish { border: 0; padding: 0; text-decoration: underline; color: var(--muted); }
 .quiz-summary { font-family: var(--sans); font-size: .88rem; padding: .8rem 0; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; }
 .quiz-summary p { margin: 0; }
+/* Live variants (npm run quiz) */
+.quiz .item.variant { border-style: dashed; border-color: var(--accent); margin-left: 1.2rem; }
+.quiz .item.variant .item-num { color: var(--accent); }
+.quiz .variant-note { display: block; margin-top: .5rem; font-family: var(--sans); font-size: .75rem; color: var(--muted); }
+@media (max-width: 600px) { .quiz .item.variant { margin-left: 0; } }
 @media print {
+  .quiz .variant-btn { display: none; }
   .quiz .explain { display: block; }
   .quiz .opts > li[data-correct] { font-weight: 600; }
 }

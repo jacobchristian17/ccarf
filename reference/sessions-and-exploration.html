@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sessions and Exploration Reference</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main><article>
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Reference · TS 1.6, 1.7, 5.4</div>
+<h1>Decomposition, sessions &amp; long exploration</h1>
+<p class="subtitle">A one-page cheat sheet, taught in <a href="../lessons/0006-decomposition-sessions-and-long-exploration.html">Lesson 6</a>.</p>
+
+<h2>Decomposition (1.6)</h2>
+<table>
+  <tr><th>Task shape</th><th>Pattern</th></tr>
+  <tr><td>Predictable, multi-aspect (same checks every time)</td><td><b>Fixed sequential pipeline</b> (prompt chaining)</td></tr>
+  <tr><td>Large code review</td><td><b>Per-file local passes</b> → <b>one cross-file integration pass</b> that receives findings, not the source</td></tr>
+  <tr><td>Open-ended investigation ("add tests to a legacy codebase")</td><td><b>Dynamic</b>: map the structure → high-impact areas → prioritised plan that <b>adapts</b> as dependencies turn up</td></tr>
+</table>
+<p>One pass over many files leads to <b>attention dilution</b>: uneven depth, missed obvious bugs, contradictory verdicts. Subagents all succeed but coverage is wrong → check the <b>decomposition</b> (sample Q7).</p>
+
+<h2>Sessions (1.7)</h2>
+<table>
+  <tr><th>Situation</th><th>Move</th></tr>
+  <tr><td>Prior context mostly valid</td><td><b>Resume</b> the named session</td></tr>
+  <tr><td>…a few files changed</td><td>Resume + <b>name the changed files</b> for a targeted re-read (not a full re-exploration)</td></tr>
+  <tr><td>Most prior tool results are stale</td><td><b>New session + injected structured summary</b> (stale findings flagged)</td></tr>
+  <tr><td>Compare divergent approaches from one baseline</td><td><b>fork_session</b> once per branch. The original stays unchanged</td></tr>
+</table>
+<pre>CLI   claude -n refund-analysis            name it        (/rename mid-session)
+      claude -r refund-analysis "…"        resume by name or id      claude -c   most recent
+      claude -r refund-analysis --fork-session "…"                   fork on resume
+SDK   query({ prompt, options: { title: "refund-analysis" } })      session_id on init + result messages
+      options: { resume: id }   ·   { resume: id, forkSession: true }   ·   forkSession(id)   (Py: fork_session=True)
+Interactive   /resume · /branch (switch into a copy) · /fork (background copy) · /compact [focus] · /clear</pre>
+<p>A fork copies the <b>conversation, not the filesystem</b>: edits in one branch are visible to the others. Resume with no change notice → the model trusts stale tool results (lab: 0 re-reads, a confidently wrong answer).</p>
+
+<h2>Long exploration (5.4)</h2>
+<ul>
+  <li><b>Symptom:</b> inconsistent answers, "typical patterns" instead of the specific classes found earlier (context degradation / context rot).</li>
+  <li><b>Scratchpad file:</b> record key findings with file:line, and consult it for later questions. Curate it, because append-only notes bloat (lab: 92 lines in one run).</li>
+  <li><b>Subagents</b> for verbose discovery ("find all test files", "trace refund flow dependencies"). The main agent keeps the high-level view.</li>
+  <li><b>Phase summaries:</b> summarise phase N, then inject the summary into phase N+1's initial context.</li>
+  <li><b>Manifest:</b> each agent exports structured state to a known location, and the coordinator loads the manifest on resume and injects it into the prompts. This gives you handoff and crash recovery from one mechanism.</li>
+  <li><b><code>/compact</code></b> when context fills with discovery output.</li>
+</ul>
+<pre>state/&lt;agent&gt;.json  { agent, phase, status: done|in_progress|failed, summary, findings[{fact,file,line}], filesRead, openQuestions, updatedAt }
+state/manifest.json { runId, updatedAt, agents: { &lt;agent&gt;: { status, stateFile } } }     write .tmp → rename (atomic)
+resume: skip done · inject done summaries + findings · mark in_progress findings "interrupted, unverified"</pre>
+
+<p>Distractors: bigger context window; repeat the instructions; restart from scratch; resume anyway and correct as you go; fork to "preserve" stale analysis; /compact a stale session; retry until it succeeds; one agent explores both approaches in sequence; re-read every file "to be safe".</p>
+</article></main>
+</body>
+</html>

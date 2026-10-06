@@ -17,7 +17,11 @@
     "l4:ask": "tsx 04-subagents/run.ts",
     "l5:check": "tsx 05-provenance/check.ts",
     "l5:check:solution": "tsx 05-provenance/check.ts solution",
-    "l5:ask": "tsx 05-provenance/run.ts"
+    "l5:ask": "tsx 05-provenance/run.ts",
+    "l6:check": "tsx 06-sessions/check.ts",
+    "l6:check:solution": "tsx 06-sessions/check.ts solution",
+    "l6:ask": "tsx 06-sessions/run.ts",
+    "quiz": "tsx quiz/server.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.289",

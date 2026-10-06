@@ -33,7 +33,7 @@
 | 13 | Weak-area drill + mock exam 2 | weakest | — |
 
 ## Progress
-- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [ ] 5 (in progress)  - [ ] 6  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10  - [ ] 11  - [ ] 12  - [ ] 13
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [~] 5 (lesson read; lab 9/44 on 2026-10-05)  - [ ] 6 (in progress)  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10  - [ ] 11  - [ ] 12  - [ ] 13
 
 ## Working notes
 - 2026-10-02: the user declared Lesson 1 done without reporting steps 5–8 or the quiz score. They prefer momentum; carry retrieval forward instead of gating on it.
@@ -41,3 +41,5 @@
 - Every lab has a deterministic grader (`npm run lN:check`) for a tight feedback loop, plus `lN:ask` for real-model observation.
 - Lesson 4 lab (`lab/04-subagents/`) runs the coordinator on the Agent SDK with `strictMcpConfig: true` (otherwise claude.ai connectors leak into the tool list), `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` and `background: false` per agent (subagents default to background). The coordinator sees every MCP tool regardless of `disallowedTools`, so the provided `hubOnly` hook denies its own research calls. Fault-injection switches follow the `THIN=1` pattern: `LOSSY=1`, `SEQUENTIAL=1`.
 - Lesson 5 lab (`lab/05-provenance/`) reuses the L4 corpus with a fault-injecting `tools.ts` (`OUTAGE=<subtopic>`, `FLAKY=1`). Hooks are done for the learner: SubagentStop validates the report with the learner's Zod contract (`decision: "block"` + issues, one retry), PostToolUse stores parsed reports, PreToolUse on the synthesizer swaps in `buildSynthesisBrief` output via `updatedInput`. Both mechanisms verified live on SDK v0.3.289.
+- Lesson 6 lab (`lab/06-sessions/`): fixture repo `fixture/refundly` plus change overlays (`changes/small|big`), copied into `.work/` (gitignored). `run.ts` subcommands: explore (code coordinator, 4 Haiku phase agents, manifest handoff, `CRASH_AFTER=n`, `RESET=1`), review, session (SDK `title: "refund-analysis"`), change small|big, followup (`FORCE=resume|fresh`), fork. `npm run l6:ask` doesn't load `.env` (its MODEL=claude-opus-5-5 is for L1), so it defaults to Haiku. The SDK `title` is resumable by name via `claude -r <title>`. On Windows, put the prompt before `--tools ""`.
+- Live quiz variants (user request, 2026-10-06): `npm run quiz` (lab/quiz/server.ts) serves the course on http://localhost:4317. On a missed item, quiz.js offers "Try a new question on this topic". The server runs `claude -p --json-schema` (default sonnet, QUIZ_MODEL to override) grounded in the task-statement text from md/CCAR-F/sections, aims at the picked distractor, checks option length and correct count in code (one retry with the issues), and shuffles option order. Variants don't count toward the main score: the summary line adds "new questions x/y". Every generation is appended to assets/variants/<quiz>.json, which is worth reviewing for wrong items. ~7–10 s per item. Lessons opened as file:// show no button.
