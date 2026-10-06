@@ -21,6 +21,9 @@
     "l6:check": "tsx 06-sessions/check.ts",
     "l6:check:solution": "tsx 06-sessions/check.ts solution",
     "l6:ask": "tsx 06-sessions/run.ts",
+    "l7:check": "tsx 07-team-config/check.ts",
+    "l7:check:solution": "tsx 07-team-config/check.ts solution",
+    "l7:ask": "tsx 07-team-config/run.ts",
     "quiz": "tsx quiz/server.ts"
   },
   "dependencies": {

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLAUDE.md, Rules and Skills Reference</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main><article>
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Reference · TS 3.1, 3.2, 3.3</div>
+<h1>CLAUDE.md, rules, commands &amp; skills</h1>
+<p class="subtitle">A one-page cheat sheet, taught in <a href="../lessons/0007-claude-md-rules-commands-and-skills.html">Lesson 7</a>. For every instruction, decide <b>who</b> gets it and <b>when</b> it loads.</p>
+
+<h2>Where an instruction goes</h2>
+<table>
+  <tr><th>The instruction is…</th><th>Put it in</th></tr>
+  <tr><td>A universal team standard for every task</td><td>Project <code>./CLAUDE.md</code> or <code>./.claude/CLAUDE.md</code> (short)</td></tr>
+  <tr><td>A topic (testing, API, deploy) for some files</td><td><code>.claude/rules/&lt;topic&gt;.md</code> with <code>paths:</code> globs</td></tr>
+  <tr><td>A convention by file type, scattered across directories</td><td>A path rule with a type glob: <code>"**/*.test.tsx"</code>. <b>Not</b> a directory CLAUDE.md</td></tr>
+  <tr><td>Specific to one package, with shared standards files</td><td><code>pkg/CLAUDE.md</code> + <code>@../../docs/standards/x.md</code> (only the ones that apply)</td></tr>
+  <tr><td>A task-specific workflow, run sometimes</td><td>A skill (<code>.claude/skills/x/SKILL.md</code>) or command (<code>.claude/commands/x.md</code>)</td></tr>
+  <tr><td>Your personal preference</td><td><code>~/.claude/CLAUDE.md</code>, <code>CLAUDE.local.md</code>, or <code>~/.claude/skills/my-x/</code> (<b>a different name</b>)</td></tr>
+</table>
+
+<h2>CLAUDE.md hierarchy (3.1)</h2>
+<table>
+  <tr><th>File</th><th>Shared?</th><th>Loads</th></tr>
+  <tr><td>Managed policy</td><td>Machine-wide, can't be excluded</td><td>Launch, first</td></tr>
+  <tr><td><code>~/.claude/CLAUDE.md</code></td><td><b>No</b>: only you, all projects</td><td>Launch</td></tr>
+  <tr><td><code>./CLAUDE.md</code> · <code>./.claude/CLAUDE.md</code></td><td>Yes (git)</td><td>Launch</td></tr>
+  <tr><td><code>./CLAUDE.local.md</code></td><td>No (you add it to .gitignore)</td><td>Launch, after CLAUDE.md</td></tr>
+  <tr><td><code>sub/dir/CLAUDE.md</code></td><td>Yes</td><td><b>On demand</b>: first Read/Write/Edit under that dir</td></tr>
+</table>
+<p>The files are <b>concatenated, not overridden</b>: root-down, the closest file is read last, and conflicts are resolved arbitrarily. A new teammate missing instructions means they're in somebody's <b>user-level</b> file.<br>
+<code>@path</code> resolves relative to the <b>importing file</b>, up to 4 hops. It's ignored in code spans and blocks, and imports from outside the project ask for approval the first time. An imported file costs as much context as pasting it in.<br>
+<b>Verify:</b> <code>/memory</code> (exam: which memory files are loaded) · <code>/context</code> → Memory files (lazy loads don't appear) · <code>InstructionsLoaded</code> hook (<code>load_reason</code>: <code>session_start</code> · <code>nested_traversal</code> · <code>path_glob_match</code> · <code>include</code> · <code>compact</code>).</p>
+
+<h2>Path-scoped rules (3.3)</h2>
+<pre>---
+paths:
+  - "src/api/**/*"
+  - "**/*.test.*"          <span class="c"># YAML list of quoted globs; braces work: "src/**/*.{ts,tsx}"</span>
+---
+# API + test conventions …</pre>
+<p><b>No frontmatter</b> → loads at launch, like <code>.claude/CLAUDE.md</code>. <b>With <code>paths</code></b> → loads when Claude touches a matching file (exam: "editing"; today: Read, Write or Edit), once per session. Overlapping globs stack (<code>src/web/**/*.tsx</code> also matches <code>*.test.tsx</code>). <code>~/.claude/rules/</code> works for personal rules.</p>
+
+<h2>Commands and skills (3.2)</h2>
+<table>
+  <tr><th></th><th>Team (git)</th><th>Personal</th></tr>
+  <tr><td>Command</td><td><code>.claude/commands/review.md</code> → <code>/review</code></td><td><code>~/.claude/commands/</code></td></tr>
+  <tr><td>Skill</td><td><code>.claude/skills/review/SKILL.md</code></td><td><code>~/.claude/skills/my-review/</code></td></tr>
+</table>
+<pre>---
+name: impact-scan
+description: Find everything that depends on a symbol before changing it. Use before renames.
+argument-hint: "&lt;symbol or file path&gt;"     <span class="c"># prompts for params; body reads $ARGUMENTS · $0 · $1</span>
+context: fork                              <span class="c"># isolated subagent; only the result returns</span>
+agent: Explore                             <span class="c"># Explore · Plan · general-purpose (default) · .claude/agents/x</span>
+allowed-tools: Read, Grep, Glob            <span class="c"># exam: restricts · today: pre-approves only</span>
+disallowed-tools: Write, Edit, Bash        <span class="c"># today: what actually removes tools</span>
+---
+Map the impact of changing `$ARGUMENTS`. Return at most 12 lines. Do not paste file contents.</pre>
+<p><b>Skill vs CLAUDE.md:</b> CLAUDE.md is always loaded, for universal standards. A skill is on demand, for task workflows: only its description sits in context until it's invoked. <b>Fork it</b> when output is verbose (codebase analysis) or exploratory (brainstorming alternatives). Other fields: <code>disable-model-invocation: true</code> (only a person can run it), <code>user-invocable: false</code>, <code>model</code>, <code>paths</code>.<br>
+<b>Name clash:</b> enterprise &gt; personal &gt; project, so a personal skill with the team's name shadows it. A skill beats a command with the same name.</p>
+
+<h2>Exam answer vs current reality</h2>
+<table>
+  <tr><th>Exam (guide v1.0)</th><th>Today (CLI 2.1.290, verified 2026-10-06)</th></tr>
+  <tr><td><code>.claude/commands/</code> for commands</td><td>Merged into skills. Old files still work, and a skill wins a name clash</td></tr>
+  <tr><td><code>allowed-tools</code> restricts tools</td><td>It pre-approves and "does not restrict". <code>disallowed-tools</code> restricts. Lab: <code>allowed-tools</code> alone → Write succeeded</td></tr>
+  <tr><td>Path rules load "when editing"</td><td>Read, Write or Edit. Lab: a Read loaded two rules</td></tr>
+  <tr><td><code>/memory</code> verifies what's loaded</td><td><code>/memory</code> lists and edits. <code>/context</code> or the InstructionsLoaded hook shows what's in context</td></tr>
+</table>
+<p>Lab traps: in a forked skill, any text after <code>/skill</code> becomes <code>$ARGUMENTS</code>, including "then save it to a file". A deny list must also cover the workaround tools: when Write was denied, the model tried Bash.</p>
+</article></main>
+</body>
+</html>

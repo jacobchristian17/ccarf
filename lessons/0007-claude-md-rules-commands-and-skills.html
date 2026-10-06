@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLAUDE.md, Rules, Commands and Skills</title>
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+</head>
+<body>
+<main><article>
+
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Lesson 7 of 13 · Domain 3 (20%)</div>
+<h1>CLAUDE.md, rules, commands and skills</h1>
+<p class="subtitle">Every Domain 3 configuration question comes down to two choices: <em>who</em> gets an instruction (just you, or everyone who clones the repo) and <em>when</em> it enters context (always, when a matching file is touched, or only when someone asks). Get both right and the rest follows.</p>
+
+<div class="meta">
+  <span><b>Task statements</b> 3.1 · 3.2 · 3.3</span>
+  <span><b>Time</b> ~12 min read · ~40 min build · ~12 min quiz</span>
+  <span><b>Scenarios</b> Code Generation with Claude Code · Developer Productivity</span>
+</div>
+
+<details class="recall">
+  <summary>Warm-up: Lesson 6 retrieval, a lab check, then a prediction</summary>
+  <div>From memory: (1) A teammate changed 2 of the 30 files your named session read. Resume, resume with a notice, or start fresh? What changes your answer? (2) Name the five 5.4 techniques for long exploration. (3) What does a fork copy, and what doesn't it copy?<br>
+  <b>Lab status (graded 2026-10-06):</b> <code>l5:check</code> 9/44 and <code>l6:check</code> 13/57, both at the starter. Neither lab has been started. Lesson 10 builds on the L5 report contract (TODO 1), so that's the one to catch up on first.<br>
+  Then predict two things. (a) A <code>.claude/rules/testing.md</code> has <code>paths: ["**/*.test.*"]</code>. Claude only <em>reads</em> a test file and doesn't edit it. Does the rule load? (b) A skill has <code>allowed-tools: Read, Grep, Glob</code>, the session would allow Write, and the user asks it to save its output to a file. Does the file get written? §5 has what we saw.</div>
+</details>
+
+<h2>1 · The CLAUDE.md hierarchy (3.1)</h2>
+
+<div class="table-wrap"><table>
+  <tr><th>File</th><th>Who gets it</th><th>When it loads</th></tr>
+  <tr><td><code>~/.claude/CLAUDE.md</code> (user)</td><td><b>Only you</b>, in every project. Not in git</td><td>At launch</td></tr>
+  <tr><td><code>./CLAUDE.md</code> or <code>./.claude/CLAUDE.md</code> (project)</td><td><b>Everyone</b> who clones the repo</td><td>At launch</td></tr>
+  <tr><td><code>./CLAUDE.local.md</code></td><td>Only you, in this project. You add it to .gitignore</td><td>At launch, after CLAUDE.md</td></tr>
+  <tr><td><code>packages/billing/CLAUDE.md</code> (directory)</td><td>Everyone</td><td><b>On demand</b>: the first time Claude reads, writes or edits a file under that directory</td></tr>
+  <tr><td>Managed policy (<code>C:\Program Files\ClaudeCode\CLAUDE.md</code> …)</td><td>Everyone on the machine. It can't be excluded</td><td>At launch, first</td></tr>
+</table></div>
+
+<p><b>The exam's favourite diagnosis:</b> "a new team member isn't getting the instructions". The instructions are in someone's <code>~/.claude/CLAUDE.md</code>, which never left their machine. The fix is to move them into the project file. The reverse failure is just as real: personal preferences committed to the project file reach every teammate. In the lab's starter config, a teammate's session recites "You alias <code>pnpm test</code> as <code>t</code> in your shell" back to them.</p>
+
+<p>The files <b>stack</b>. They don't override each other. The docs: "All discovered files are concatenated into context rather than overriding each other", ordered from the filesystem root down, so the closer file is read last. If two files contradict each other, "Claude may pick one arbitrarily". The fix for a conflict is to remove it, not to rely on which file wins.<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/memory">Memory (CLAUDE.md)</a>: "Choose where to put CLAUDE.md files" and "How CLAUDE.md files load". Task statement 3.1, <code>md/CCAR-F/sections/09</code>.</span></p>
+
+<h3><code>@import</code> keeps it modular</h3>
+<pre># packages/billing/CLAUDE.md
+Owned by the billing team. Cite the rule source for every tax change.
+
+@../../docs/standards/money.md        <span class="c"># relative to THIS file, not the working directory</span></pre>
+<ul>
+  <li>Relative paths resolve from the importing file. Absolute paths work too. Imports can nest up to <b>four hops</b>.</li>
+  <li>An <code>@path</code> inside a code span or fenced block is ignored, so code examples don't trigger imports.</li>
+  <li>The first time a project imports a file from <em>outside</em> the working directory, Claude Code asks for approval. If you decline, the dialog doesn't come back.</li>
+  <li><b>Import selectively.</b> Each package imports the standards its maintainers know apply to it, not every standards file. An import is expanded into context in full, so a lazy "import everything" costs as much as pasting everything in.</li>
+</ul>
+
+<h3>Seeing what actually loaded</h3>
+<div class="table-wrap"><table>
+  <tr><th>Tool</th><th>What it shows</th></tr>
+  <tr><td><code>/memory</code></td><td>The exam's answer for "verify which memory files are loaded". Today it lists the memory files across user and project scope (including files that don't exist yet), opens them in your editor, and toggles auto memory</td></tr>
+  <tr><td><code>/context</code> → "Memory files"</td><td>What's in context now, with token counts. <b>Lazy loads don't appear</b>: a subdirectory CLAUDE.md shows up as a <code>Loaded</code> line in the terminal instead</td></tr>
+  <tr><td><code>InstructionsLoaded</code> hook</td><td>Fires for every CLAUDE.md or rule file that enters context, with <code>load_reason</code> (<code>session_start</code> · <code>nested_traversal</code> · <code>path_glob_match</code> · <code>include</code> · <code>compact</code>) and the file that triggered it. Observability only, it can't block. The lab is built on it</td></tr>
+</table></div>
+
+<h2>2 · <code>.claude/rules/</code> and path scoping (3.3)</h2>
+
+<p>Split a monolithic CLAUDE.md into one focused file per topic: <code>testing.md</code>, <code>api-conventions.md</code>, <code>deployment.md</code>. A rule file has two modes:</p>
+<pre><span class="c"># no frontmatter → loads at launch, same priority as .claude/CLAUDE.md (just tidier)</span>
+
+---
+paths:
+  - "**/*.test.*"            <span class="c"># YAML list of quoted globs (a comma-separated string also works)</span>
+---
+# Tests
+- Vitest. Import test/expect explicitly; no globals.</pre>
+
+<p>A <code>paths:</code> rule stays out of context until Claude touches a matching file. That saves tokens, and it also keeps irrelevant conventions out of the model's attention. <b>Why globs instead of a directory CLAUDE.md?</b> A directory file is tied to one directory. Test files sit <em>next to</em> the code they test, in every directory, so only a file-type glob (<code>**/*.test.tsx</code>) catches all of them. That's sample Q6. The lab's starter config shows the failure: its test conventions live in <code>src/api/CLAUDE.md</code>, so tests in <code>src/web/</code>, <code>src/lib/</code> and <code>packages/billing/</code> never get them.</p>
+
+<p><b>This repo already has one.</b> <code>.claude/rules/test-output.md</code> is scoped to <code>lab/**/check.ts</code> and <code>lab/**/*.test.ts</code>. When I wrote <code>lab/07-team-config/check.ts</code> for this lesson, it loaded on its own, which is why the grader prints green ✓ and red ✗ like the other six.</p>
+
+<h2>3 · Commands and skills (3.2)</h2>
+
+<div class="table-wrap"><table>
+  <tr><th></th><th>Project (shared through git)</th><th>Personal (just you)</th></tr>
+  <tr><td><b>Command</b>: one Markdown file → <code>/name</code></td><td><code>.claude/commands/review.md</code></td><td><code>~/.claude/commands/review.md</code></td></tr>
+  <tr><td><b>Skill</b>: a directory with <code>SKILL.md</code> plus optional files</td><td><code>.claude/skills/impact-scan/SKILL.md</code></td><td><code>~/.claude/skills/my-impact-scan/SKILL.md</code></td></tr>
+</table></div>
+
+<p>Your own machine shows both columns. You have personal commands in <code>~/.claude/commands/</code> (<code>app-engineer.md</code>, <code>project-manager.md</code> …) and personal skills in <code>~/.claude/skills/</code>. The <code>tutor</code> skill that produced this lesson's outline uses <code>argument-hint</code> and <code>allowed-tools</code>. None of them reach a teammate.</p>
+
+<div class="table-wrap"><table>
+  <tr><th>SKILL.md frontmatter</th><th>What it does</th></tr>
+  <tr><td><code>description</code></td><td>When to use it. Claude reads the description to decide whether to invoke the skill. The body loads only when it's invoked</td></tr>
+  <tr><td><code>context: fork</code></td><td>Runs the skill in a <b>subagent</b> that doesn't see your conversation. Only its final result comes back. Use it for verbose output (codebase analysis) or exploratory output (brainstorming) that would clutter the main session</td></tr>
+  <tr><td><code>agent: Explore</code></td><td>Which subagent the fork runs in: <code>Explore</code>, <code>Plan</code>, <code>general-purpose</code> (the default), or one from <code>.claude/agents/</code></td></tr>
+  <tr><td><code>argument-hint: "&lt;symbol or file&gt;"</code></td><td>Shown when someone types <code>/impact-scan</code> with no arguments, as a prompt for what to pass. The body reads them as <code>$ARGUMENTS</code>, <code>$0</code>, <code>$1</code> …</td></tr>
+  <tr><td><code>allowed-tools</code></td><td>Exam: "restrict tool access during skill execution". Today: see the callout below</td></tr>
+  <tr><td><code>disable-model-invocation: true</code></td><td>Only a person can run it, for workflows with side effects (deploy, commit)</td></tr>
+</table></div>
+
+<p><b>Skill or CLAUDE.md?</b> CLAUDE.md is always loaded, so it's for universal standards that apply to every task. A skill loads on demand, so it's for a task-specific workflow that runs sometimes. A 15-line "how to do an impact scan" procedure in CLAUDE.md costs context in every session and dilutes attention on the rules that always apply. As a skill, it costs one description line until someone needs it. (A path rule is the third option: conventions that depend on <em>which file</em> is being touched.)</p>
+
+<p><b>Personal variants get a different name.</b> If a skill name exists at both levels, the personal one wins ("enterprise over personal, and personal over project"). A personal <code>impact-scan</code> would quietly shadow the team's version on your machine, so you'd be testing something your teammates don't run. Call yours <code>my-impact-scan</code>.<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/skills">Skills</a>: "Where skills live", "Frontmatter reference", "Run skills in a subagent", "Pre-approve tools for a skill". Task statement 3.2.</span></p>
+
+<div class="callout exam"><span class="label">Exam answer vs current reality</span>
+<div class="vs">
+  <div><h4>Exam (3.1–3.3)</h4>Commands live in <code>.claude/commands/</code>, skills in <code>.claude/skills/</code>. <code>allowed-tools</code> <b>restricts</b> what a skill can use ("limiting to file write operations to prevent destructive actions"). Path rules load "only when editing matching files". <code>/memory</code> verifies which memory files are loaded.</div>
+  <div><h4>Today (CLI 2.1.290)</h4>Commands have been <b>merged into skills</b>: <code>.claude/commands/x.md</code> and <code>.claude/skills/x/SKILL.md</code> both create <code>/x</code>, and on a name clash the skill wins. <code>allowed-tools</code> <b>pre-approves</b> tools for that turn: "It does not restrict which tools are available". The restricting field is <code>disallowed-tools</code>. Path rules trigger on <b>Read</b>, Write or Edit. <code>/memory</code> is mostly an editor; use <code>/context</code> for what's loaded now.</div>
+</div>
+On the exam, answer in the exam's terms: <code>allowed-tools</code> is the restriction mechanism, and "editing" is when path rules load. In real configs, put the read-only list in <code>allowed-tools</code> <em>and</em> the dangerous tools in <code>disallowed-tools</code>. §5 shows why. The lab grader checks for both.<span class="sn-ref"></span><span class="sidenote">Docs verified 2026-10-06: <a href="https://code.claude.com/docs/en/skills">Skills</a> ("Custom commands have been merged into skills", "Pre-approve tools for a skill"). <a href="https://code.claude.com/docs/en/memory">Memory</a> ("Path-scoped rules trigger when Claude uses the Read, Write, or Edit tool on a file matching the pattern"). <a href="https://code.claude.com/docs/en/hooks">Hooks → InstructionsLoaded</a>.</span></div>
+
+<h2>4 · Build: a team config for <code>tally</code> (Exercise 2a)</h2>
+
+<p>The lab is <code>lab/07-team-config/</code>. <code>fixture/tally/</code> is a small invoicing repo (API, React, shared lib, a billing package, Terraform) with test files spread across four directories. You don't edit the fixture. Your config goes in <code>team/</code>, which every live run lays over a fresh copy of the fixture. <code>team/personal/CLAUDE.md</code> stands in for <code>~/.claude/CLAUDE.md</code>, so nothing touches your real home config.</p>
+<pre><b>starter team/</b>   one 45-line CLAUDE.md with everything (incl. Jacob's preferences, Terraform, an impact-scan procedure)
+                src/api/CLAUDE.md holding the test conventions · a bare impact-scan skill
+<b>your target</b>    CLAUDE.md (universal, ≤ 20 lines) · .claude/rules/{api,testing,terraform,frontend}.md with paths:
+                packages/billing/CLAUDE.md with @import · personal/CLAUDE.md
+                .claude/skills/impact-scan (fork + Explore + argument-hint + tool fields) · a .claude/commands/ command
+<b>live runs</b>      fresh temp repo · settingSources: ["project"] (= a teammate's fresh clone) · InstructionsLoaded trace</pre>
+
+<div class="callout warn"><span class="label">Commands (PowerShell, in lab/)</span>
+<pre>cd C:\Users\wsenr\repos\ccarf\lab
+npm run l7:check                         <span class="c"># grader: 42 checks + a rule map, ~1 s, no model</span>
+npm run l7:ask -- map                    <span class="c"># reads 8 files in turn: what loads, when, and why</span>
+npm run l7:ask -- load src/web/InvoiceList.test.tsx
+npm run l7:ask -- edit terraform/main.tf
+npm run l7:ask -- ask                    <span class="c"># no tools: what does a teammate's session know at startup?</span>
+npm run l7:ask -- skill                  <span class="c"># /impact-scan toCents: main-thread vs subagent calls</span>
+npm run l7:ask -- guard                  <span class="c"># inline skill + "save it to IMPACT.md": what stops the write?</span>
+$env:SOLUTION="1"   ·   $env:NOFORK="1"  <span class="c"># reference config · strip context: fork for one run</span>
+Remove-Item Env:SOLUTION, Env:NOFORK -ErrorAction SilentlyContinue</pre>
+Runs take 5–35 s on Haiku 4.5.</div>
+
+<ol class="steps">
+  <li><b>Baseline.</b> <code>npm run l7:check</code> (expect 7/42). Run <code>map</code> and <code>ask</code> on the starter. How many tokens of CLAUDE.md load at startup? Which test files get the test conventions? What does a teammate's session say about "your personal answer style"?</li>
+  <li><b>TODO 1: scope (3.1).</b> Move Jacob's preferences to <code>team/personal/CLAUDE.md</code>. Cut the root CLAUDE.md to universal standards only, at most 20 lines.</li>
+  <li><b>TODO 2: path rules (3.3).</b> Create <code>team/.claude/rules/</code> with <code>api.md</code>, <code>testing.md</code>, <code>terraform.md</code> and <code>frontend.md</code>, each with a <code>paths:</code> list. Delete <code>src/api/CLAUDE.md</code>. Check the rule map that <code>l7:check</code> prints: does every test file get <code>testing.md</code>? Does <code>src/lib/money.ts</code> get nothing?</li>
+  <li><b>TODO 3: @import (3.1).</b> Create <code>team/packages/billing/CLAUDE.md</code> that imports <code>docs/standards/money.md</code> (only that one), with the path relative to the billing file.</li>
+  <li><b>TODO 4: skill + command (3.2).</b> Give <code>impact-scan</code> <code>context: fork</code>, <code>agent: Explore</code>, an <code>argument-hint</code>, <code>$ARGUMENTS</code>, and a bounded-output instruction. First add <b>only</b> <code>allowed-tools: Read, Grep, Glob</code> and run <code>guard</code>. Then add <code>disallowed-tools: Write, Edit, Bash</code> and run <code>guard</code> again. Finally, add one <code>.claude/commands/*.md</code> with a description and an <code>argument-hint</code>.</li>
+  <li><b>Live, round 2.</b> Get to 42/42. Run <code>map</code>, <code>ask</code>, <code>skill</code>, then <code>skill</code> with <code>NOFORK=1</code>. Compare the main-thread tool calls and the "chars of tool results in the main context".</li>
+  <li><b>Stretch.</b> A 2-line <code>.claude/rules/style.md</code> with <b>no</b> frontmatter: where does it appear in <code>map</code>? Then make <code>testing.md</code> use <code>"**/*.test.tsx"</code> only. Which test files lose their rules, and would you ever spot that without the hook?</li>
+</ol>
+
+<h2>5 · What we observed (2026-10-06, Haiku 4.5, CLI 2.1.290, SDK v0.3.289)</h2>
+<details class="recall">
+  <summary>Prediction check (a): does a Read load a path rule?</summary>
+  <div><b>Yes.</b> <code>load src/web/InvoiceList.test.tsx</code> with no edit loaded <b>two</b> rules: <code>testing.md</code> (<code>**/*.test.*</code>) and <code>frontend.md</code>. The second was a surprise: <code>src/web/**/*.tsx</code> also matches <code>InvoiceList.test.tsx</code>, so overlapping globs stack. Each rule loads once per session. In <code>map</code>, <code>testing.md</code> fired on the first test file and didn't fire again. With <code>edit terraform/main.tf</code>, the rule loaded on the Read that came before the Edit. The exam's "when editing" is true, but a read is enough.</div>
+</details>
+<details class="recall">
+  <summary><code>map</code>: starter vs reference</summary>
+  <div><b>Starter:</b> 514 tokens of CLAUDE.md at startup, including Terraform, React and billing rules, in every session. After that, only <code>src/api/CLAUDE.md</code> loaded (<code>nested_traversal</code>, on <code>src/api/invoices.ts</code>). So test conventions reached the API tests and none of the other three test files.<br>
+  <b>Reference:</b> 185 tokens at startup. Then <code>api.md</code> loaded on <code>invoices.ts</code>, <code>frontend.md</code> on <code>InvoiceList.tsx</code>, <code>testing.md</code> on the first test, <code>packages/billing/CLAUDE.md</code> on <code>tax.ts</code> with <code>docs/standards/money.md</code> right after (<code>include</code>), and <code>terraform.md</code> on <code>main.tf</code>. Each rule loaded when it was needed and not before.<br>
+  <b>Tooling note:</b> the SDK hook never reported <code>session_start</code> for the root CLAUDE.md, although the model could quote it with no tools. The runner reads the startup list from <code>getContextUsage().memoryFiles</code>, the same data <code>/context</code> shows.</div>
+</details>
+<details class="recall">
+  <summary><code>ask</code>: what a teammate's session knows at startup</summary>
+  <div><b>Starter:</b> it listed all three Terraform rules and then "Your personal answer style: Keep answers terse… You alias <code>pnpm test</code> as <code>t</code> in your shell", in a session meant to be a teammate's. <b>Reference:</b> Terraform: none. Personal style: none. It also noted that topic rules exist in <code>.claude/rules/</code> but weren't loaded yet, which is correct.</div>
+</details>
+<details class="recall">
+  <summary><code>skill</code>: <code>context: fork</code> vs inline</summary>
+  <div><b>Forked (reference):</b> <code>/impact-scan toCents</code> ran the skill in an Explore subagent: 5 tool calls there, <b>0 tool calls and 0 turns</b> in the main thread, and a ~750-character summary back. When the prompt <em>starts</em> with the slash command, the CLI runs the forked skill before the main model takes a turn.<br>
+  <b>Inline (starter, or <code>NOFORK=1</code>):</b> 5–6 Grep/Read calls in the main thread, with 1.2k–2.9k characters of raw tool output left in the main context. That's tiny on an 8-file fixture. On a real monorepo, a 40-file impact scan would leave all of its output in your session.<br>
+  <b>Gotcha:</b> in a forked skill, everything after <code>/impact-scan</code> becomes <code>$ARGUMENTS</code>. "…and then save it to IMPACT.md" went to the read-only Explore agent, which replied that it was in read-only mode. That's why <code>guard</code> runs the skill inline. And in non-interactive runs, the <code>Skill</code> tool itself needs permission: when it was denied, Haiku quietly did the scan by hand in the main thread.</div>
+</details>
+<details class="recall">
+  <summary>Prediction check (b): does <code>allowed-tools</code> stop a write?</summary>
+  <div><b>No.</b> With <code>allowed-tools: Read, Grep, Glob</code> and nothing else, the skill ran, then called <code>Write(IMPACT.md)</code>, and the file was created. With <code>disallowed-tools: Write, Edit, Bash</code> added, Write was denied, and the model tried <b>Bash</b> (<code>cat &gt; IMPACT.md</code>) as a workaround, which was also denied. Two lessons: <code>allowed-tools</code> grants permissions and doesn't remove tools, and a deny list has to cover the workaround tools too (Bash can write files).</div>
+</details>
+<details class="recall">
+  <summary>Reference solution</summary>
+  <div><code>lab/07-team-config/solution/team/</code>, graded by <code>npm run l7:check:solution</code> (42/42). Run it live with <code>$env:SOLUTION="1"</code>.</div>
+</details>
+
+<h2>6 · Scenario check</h2>
+<p>Ten new items, then six spaced-review items: three from Lesson 6 and three from Lesson 5. Commit to an answer before you click.</p>
+
+<section class="quiz" data-quiz="0007-claude-md-rules-commands-and-skills">
+
+  <div class="item" data-ts="3.1">
+    <div class="stem">A team lead has been getting consistent results from Claude Code: it always uses the internal <code>Result&lt;T&gt;</code> type and never throws. A new hire on the same repository gets code that throws exceptions everywhere. Both use the same Claude Code version. What is the most likely cause?</div>
+    <ol class="opts">
+      <li>The new hire's machine is using a different default model</li>
+      <li data-correct>The rule is in the lead's ~/.claude/CLAUDE.md, not the project</li>
+      <li>The project CLAUDE.md is too long for the new hire's context</li>
+      <li>The new hire hasn't run /memory to load the project's rules</li>
+    </ol>
+    <div class="explain">User-level instructions apply only to that user and aren't shared through version control. The fix is to move the rule into the project CLAUDE.md (or a project rule file). A and C invent causes. D misreads <code>/memory</code>: it shows and edits memory files, and the project file loads at launch without it.</div>
+  </div>
+
+  <div class="item" data-ts="3.1">
+    <div class="stem">A monorepo has three packages. Only the <code>payments</code> package must follow the PCI logging standard in <code>docs/standards/pci-logging.md</code>, and only <code>web</code> follows the accessibility standard. Today the root CLAUDE.md pastes in all twelve standards files. What is the most maintainable structure?</div>
+    <ol class="opts">
+      <li>Keep all twelve in the root file under a heading for each package</li>
+      <li>Create one skill per standard so developers can load each on demand</li>
+      <li data-correct>Have each package's CLAUDE.md @import just the standards it needs</li>
+      <li>Copy each needed standard's text into that package's CLAUDE.md file</li>
+    </ol>
+    <div class="explain">Selective <code>@import</code> in each package's CLAUDE.md keeps one source of truth and loads only what's relevant, based on the maintainers' knowledge of which standards apply. A loads everything everywhere and relies on the model to work out which section applies. B makes always-required standards optional. D duplicates the text, so the copies drift.</div>
+  </div>
+
+  <div class="item" data-ts="3.1">
+    <div class="stem">Claude Code follows the team's commit-message convention in some sessions and ignores it in others, in the same repository. A developer suspects that a CLAUDE.md is not always being loaded. What is the best first step?</div>
+    <ol class="opts">
+      <li data-correct>Use /memory to check which memory files are loaded in each session</li>
+      <li>Repeat the convention in capital letters at the top of the project file</li>
+      <li>Add a PreToolUse hook that rejects any commit with a wrong message</li>
+      <li>Move the convention into a skill that developers run before committing</li>
+    </ol>
+    <div class="explain">Inconsistent behaviour across sessions is a loading question, so verify what's loaded before changing anything. <code>/memory</code> is the guide's tool for that. Today <code>/context</code> also lists the memory files in context. B and D change the content without a diagnosis. C may be justified later, but it isn't the first step.</div>
+  </div>
+
+  <div class="item" data-ts="3.1">
+    <div class="stem">A project CLAUDE.md has grown to 600 lines covering testing, API conventions, deployment, database migrations and code style. Developers say Claude often ignores rules that are in it. Which change is the best first step?</div>
+    <ol class="opts">
+      <li>Bold the most important rules and move them to the top of the file</li>
+      <li data-correct>Split it into topic files in .claude/rules/, path-scoped where possible</li>
+      <li>Move the file into a skill so it loads only when someone asks for it</li>
+      <li>Duplicate the most-ignored rules in each developer's user-level file</li>
+    </ol>
+    <div class="explain">Focused topic files in <code>.claude/rules/</code> replace the monolith. Rules with <code>paths:</code> load only for matching files, which removes irrelevant context instead of competing with it. A reorders the same 600 lines. C makes universal standards optional. D spreads team rules into files that aren't in version control.</div>
+  </div>
+
+  <div class="item" data-ts="3.2">
+    <div class="stem">A <code>/brainstorm-arch</code> skill generates and critiques five alternative designs before recommending one. Developers like the result, but afterwards their main session is full of rejected options, and later answers drift towards them. What is the best fix?</div>
+    <ol class="opts">
+      <li>Tell the skill to delete its rejected options once it's done</li>
+      <li>Have developers run /clear immediately after using the skill</li>
+      <li data-correct>Add context: fork so the skill runs in an isolated subagent</li>
+      <li>Limit the skill to generating two alternative designs at most</li>
+    </ol>
+    <div class="explain"><code>context: fork</code> runs the skill in a subagent with its own context. The exploration stays there and only the recommendation returns. A can't remove tokens that are already in context. B also wipes the useful work. D reduces the clutter but cuts the exploration the skill exists for.</div>
+  </div>
+
+  <div class="item" data-ts="3.2">
+    <div class="stem">Developers often type <code>/migrate-endpoint</code> with nothing after it, and the skill guesses which endpoint they meant. The skill needs a route path and a target version. What is the most direct fix?</div>
+    <ol class="opts">
+      <li>Add a CLAUDE.md rule telling Claude to ask for the endpoint first</li>
+      <li data-correct>Add argument-hint frontmatter naming the route and target version</li>
+      <li>Split the skill into one separate skill for each supported endpoint</li>
+      <li>Make the skill list every endpoint and ask the developer to pick</li>
+    </ol>
+    <div class="explain"><code>argument-hint</code> tells developers which parameters the skill expects when they invoke it, and the body reads them through <code>$ARGUMENTS</code> / <code>$0</code> / <code>$1</code>. A puts a skill-specific rule into always-loaded memory. C multiplies skills. D adds a slow interactive step to every run.</div>
+  </div>
+
+  <div class="item" data-ts="3.2">
+    <div class="stem">Your team's project skill <code>/release-notes</code> produces formal notes. You want a shorter, informal version for your own stand-ups, without changing what your teammates get. What should you do?</div>
+    <ol class="opts">
+      <li>Edit the project skill and add a flag for the informal version</li>
+      <li>Create ~/.claude/skills/release-notes/ with your own version</li>
+      <li>Add your preferred style to the project CLAUDE.md for the team</li>
+      <li data-correct>Create ~/.claude/skills/my-release-notes/ under a new name</li>
+    </ol>
+    <div class="explain">Personal variants go in <code>~/.claude/skills/</code> under a <b>different name</b>. B would shadow the team's skill on your machine, because a personal skill wins over a project skill with the same name, so you'd no longer be running what your teammates run. A and C change shared files for one person's preference.</div>
+  </div>
+
+  <div class="item" data-ts="3.3">
+    <div class="stem">Every Terraform file lives under <code>infra/</code> and must follow a strict tagging convention. Developers mostly work in <code>src/</code>, and the tagging rules have nothing to do with that code. How should the convention be configured?</div>
+    <ol class="opts">
+      <li>Add a Terraform section to the project root CLAUDE.md file</li>
+      <li data-correct>Add a .claude/rules/ file with paths: ["infra/**/*"]</li>
+      <li>Add a /terraform-check skill that developers run before commits</li>
+      <li>Put the convention in each developer's ~/.claude/CLAUDE.md file</li>
+    </ol>
+    <div class="explain">A path-scoped rule loads only when Claude works on matching files, so it costs nothing in <code>src/</code> sessions. A loads it into every session. C depends on someone remembering to run it. D isn't shared through git. (A directory CLAUDE.md in <code>infra/</code> would also work here, because the files all sit in one directory. When the files are scattered, only the glob works.)</div>
+  </div>
+
+  <div class="item" data-ts="3.3">
+    <div class="stem">Storybook stories (<code>*.stories.tsx</code>) sit next to their components in about 60 directories. The team wants story conventions applied automatically whenever Claude works on a story, and nowhere else. What is the best approach?</div>
+    <ol class="opts">
+      <li>A CLAUDE.md in each of the 60 directories containing stories</li>
+      <li>A section on stories in the project root CLAUDE.md file</li>
+      <li data-correct>A .claude/rules/ file with paths: ["**/*.stories.tsx"]</li>
+      <li>A /story skill that developers invoke when writing stories</li>
+    </ol>
+    <div class="explain">Conventions defined by file type across many directories are what glob-scoped rules are for. A is 60 copies to keep in sync, and it would also load for the components next to the stories. B loads everywhere. D isn't automatic. This is sample Q6 with stories in place of tests.</div>
+  </div>
+
+  <div class="item" data-ts="3.3">
+    <div class="stem">A team adds <code>.claude/rules/testing.md</code> with <code>paths: ["src/**/*.test.ts"]</code>. Tests under <code>src/</code> follow the conventions, but tests in <code>packages/*/tests/</code> and every <code>*.test.tsx</code> file don't. What is the fix?</div>
+    <ol class="opts">
+      <li data-correct>Widen the glob to cover every test file, e.g. "**/*.test.*"</li>
+      <li>Copy testing.md into each package's own .claude/rules/ directory</li>
+      <li>Remove the paths field so testing.md loads in every single session</li>
+      <li>Add a CLAUDE.md with the test rules inside each tests/ directory</li>
+    </ol>
+    <div class="explain">The glob is too narrow: it's limited to <code>src/</code> and to the <code>.ts</code> extension. A file-type glob from the root catches tests wherever they are. B and D duplicate the conventions. C loads test rules where they aren't relevant. In the lab, the <code>l7:check</code> rule map shows this kind of gap at once.</div>
+  </div>
+
+  <div class="item" data-ts="1.7 · review">
+    <div class="stem">On Friday you analysed a payments module in a session named <code>ledger-audit</code>. Over the weekend, a teammate's refactor rewrote most of the files that session had read. On Monday, what is the most reliable way to continue?</div>
+    <ol class="opts">
+      <li>Resume ledger-audit and tell it that the module was refactored</li>
+      <li data-correct>Start fresh and inject a structured summary of Friday's findings</li>
+      <li>Fork ledger-audit so Friday's analysis stays as the baseline</li>
+      <li>Resume ledger-audit and run /compact before asking anything new</li>
+    </ol>
+    <div class="explain">When most of the earlier tool results are stale, a new session with an injected structured summary (stale findings flagged) beats resuming. A works when a few named files changed, not most of them. C and D keep the stale results in context. Lesson 6, <a href="../reference/sessions-and-exploration.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="5.4 · review">
+    <div class="stem">A four-phase codebase-audit pipeline is killed by a deploy halfway through phase 3. On restart it reruns phases 1 and 2, and phase 4's planner never sees what phase 3 found. What fixes both problems?</div>
+    <ol class="opts">
+      <li>Give the pipeline a longer timeout so deploys can't interrupt it</li>
+      <li>Store the coordinator's transcript and resume that on restart</li>
+      <li>Merge the four phases into one agent that runs from start to end</li>
+      <li data-correct>Have each phase export state, and resume from a loaded manifest</li>
+    </ol>
+    <div class="explain">Each agent exports structured state to a known location, and the coordinator loads a manifest on resume and injects it into the remaining agents' prompts. That gives crash recovery and handoff together. A only avoids one cause of the crash. B depends on one transcript, and the phase agents still don't get the findings. C brings back long-context degradation. Lesson 6.</div>
+  </div>
+
+  <div class="item" data-ts="1.6 · review">
+    <div class="stem">Every pull request in your repo must pass the same four checks in order: license headers, then secrets scan, then dependency diff, then changelog entry. Which decomposition fits best?</div>
+    <ol class="opts">
+      <li>A coordinator that decides which checks each pull request needs</li>
+      <li data-correct>A fixed sequential pipeline with one step for each of the checks</li>
+      <li>One open-ended prompt asking the agent to review the pull request</li>
+      <li>A dynamic plan the agent builds after mapping each pull request</li>
+    </ol>
+    <div class="explain">The steps are known in advance and identical every time, which is prompt chaining. A and D add adaptivity the task doesn't need, which means more variance and more cost. C loses the structure that makes the checks consistent. Lesson 6.</div>
+  </div>
+
+  <div class="item" data-ts="5.3 · review">
+    <div class="stem">A pricing-research subagent can't reach one of its three data sources because of an authentication error. It returns <code>{"status": "error", "message": "failed"}</code>, and the coordinator gives up on the whole subtopic. What should the subagent have returned?</div>
+    <ol class="opts">
+      <li>The same generic error, retried a few times before it gives up</li>
+      <li>An empty list of results with the status set to "complete"</li>
+      <li data-correct>Partial results and the failure type, source, and alternatives</li>
+      <li>A guess at the missing prices, marked as estimates in the text</li>
+    </ol>
+    <div class="explain">Structured error context (failure type, what was attempted, partial results, possible alternatives) lets the coordinator recover intelligently: re-delegate, try another source, or annotate the gap. A still hides the details. B reports a failure as success. D invents data. Lesson 5, <a href="../reference/errors-and-provenance.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="5.6 · review">
+    <div class="stem">Two sources give different market-size figures for the same year: $4.1B from an analyst report and $6.3B from a trade association. The synthesis agent reports "about $5B". What should it have done?</div>
+    <ol class="opts">
+      <li>Pick the figure from whichever source is the more authoritative</li>
+      <li>Report the average and add a footnote saying the sources disagree</li>
+      <li>Drop the market-size claim, since the evidence is inconsistent</li>
+      <li data-correct>Report both figures, each with its source, and flag the conflict</li>
+    </ol>
+    <div class="explain">When sources conflict, keep both values with their attribution and flag the conflict. The reader, or a later step, can then judge methodology. A makes the choice silently. B produces a number that no source supports. C throws away real evidence. Lesson 5.</div>
+  </div>
+
+  <div class="item" data-ts="5.1 · review">
+    <div class="stem">A 40-turn support conversation starts with the customer's account number, refund amount and order date. By turn 35, the agent's summaries of the case describe the refund as "a recent purchase" with no amount. What is the best fix?</div>
+    <ol class="opts">
+      <li data-correct>Keep a persistent case-facts block in context, outside summaries</li>
+      <li>Ask the customer to repeat the key details every ten turns or so</li>
+      <li>Summarise the conversation more often, so that fewer facts are lost</li>
+      <li>Use a model with a larger context window for long conversations</li>
+    </ol>
+    <div class="explain">Progressive summarisation loses exact values. Extract transactional facts (amounts, dates, IDs) into a structured block that is carried forward and never summarised. B pushes the problem onto the customer. C makes the loss worse. D delays the problem. Lesson 5, <a href="../reference/errors-and-provenance.html">reference</a>.</div>
+  </div>
+
+</section>
+
+<div class="source"><span class="label">Primary source · read this next</span>
+<p style="margin:.3rem 0 0"><a href="https://code.claude.com/docs/en/memory"><b>Memory (CLAUDE.md)</b></a>: the load-order section and "Organize rules with .claude/rules/". Then <a href="https://code.claude.com/docs/en/skills"><b>Skills</b></a>: the frontmatter reference, "Run skills in a subagent", and "Pre-approve tools for a skill" (the <code>allowed-tools</code> wording). Reread task statements 3.1–3.3 in <code>md/CCAR-F/sections/09</code> and sample Q4 and Q6 in <code>14</code>. Cheat sheet: <a href="../reference/claude-md-rules-and-skills.html">reference/claude-md-rules-and-skills</a>.</p>
+</div>
+
+<p class="ask">If you're unsure whether a convention belongs in CLAUDE.md, a path rule or a skill in your own projects, ask me. When you're done, paste your <code>l7:check</code> score and the quiz summary line, plus three things from your runs: startup CLAUDE.md tokens before and after (<code>map</code>), main-thread tool calls with and without <code>context: fork</code> (<code>skill</code>), and whether <code>guard</code> wrote IMPACT.md with <code>allowed-tools</code> alone.</p>
+
+<div class="nav-lessons"><a href="0006-decomposition-sessions-and-long-exploration.html">← Lesson 6 · Decomposition, sessions and long exploration</a><span>Next: Lesson 8 · MCP integration, built-in tools and plan mode →</span></div>
+
+</article></main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

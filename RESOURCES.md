@@ -80,7 +80,8 @@ Verified 2026-10-01: every URL below returned HTTP 200 (after redirects) and its
 - [Memory (CLAUDE.md) — Claude Code Docs](https://code.claude.com/docs/en/memory)
   Where CLAUDE.md files live and how they load, `@path` imports, `.claude/rules/` with `paths:` frontmatter, user-level rules, `/memory`. Use for: 3.1, 3.3.
 - [Skills — Claude Code Docs](https://code.claude.com/docs/en/skills)
-  SKILL.md frontmatter (`context: fork`, `agent`, `allowed-tools`, `argument-hint`, `paths`). Says that custom commands have been merged into skills. Use for: 3.2.
+  SKILL.md frontmatter (`context: fork`, `agent`, `allowed-tools`, `disallowed-tools`, `argument-hint`, `paths`). Says that custom commands have been merged into skills. Use for: 3.2.
+  Re-checked 2026-10-06: `allowed-tools` "does not restrict which tools are available" (it pre-approves). Precedence is enterprise > personal > project. A skill beats a command with the same name. A forked skill's `agent` defaults to general-purpose.
 - [Commands — Claude Code Docs](https://code.claude.com/docs/en/commands)
   Built-in commands such as /memory, /compact, /resume. Use for: 3.1, 3.2, 5.4.
 - [Subagents — Claude Code Docs](https://code.claude.com/docs/en/sub-agents)

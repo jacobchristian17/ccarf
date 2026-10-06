@@ -1,0 +1,104 @@
+[
+  {
+    "at": "2026-10-06T08:43:31.562Z",
+    "from": "A monorepo has three packages. Only the payments package must follow the PCI logging standard in docs/standards/pci-logg",
+    "ts": "3.1",
+    "stem": "A monorepo holds a `billing-api` service, a `mobile-app`, and a `data-pipeline`. Only `billing-api` must follow the audit-trail rules in `docs/standards/audit-trail.md`, and only `mobile-app` follows `docs/standards/offline-sync.md`. The root `CLAUDE.md` currently loads ten standards files for every session, and engineers report Claude applying audit-trail rules in unrelated packages. What is the best restructuring?",
+    "options": [
+      "Paste each package's standards text into its own package CLAUDE.md",
+      "Have each package's CLAUDE.md use @import for only its standards",
+      "Add each standard as an optional skill that engineers invoke manually",
+      "Keep every import at the root and add a note naming packages"
+    ],
+    "correct": [
+      1
+    ],
+    "explain": "Importing only the relevant standards from each package's CLAUDE.md keeps a single source of truth and loads just what applies, based on maintainers' knowledge of each package. Skills make rules that must always apply depend on someone remembering to invoke them. Pasting the text duplicates content so copies drift. Keeping everything at the root still loads all standards everywhere and relies on the model to guess which ones apply, which caused the problem.",
+    "concept": "Selective @import of relevant standards in package-level CLAUDE.md files"
+  },
+  {
+    "at": "2026-10-06T08:49:32.564Z",
+    "from": "Your team's project skill /release-notes produces formal notes. You want a shorter, informal version for your own stand-",
+    "ts": "3.2",
+    "stem": "Your team's repo has a project skill at `.claude/skills/triage-bug/` that applies a strict severity rubric. Wanting a lighter rubric for your own use, a developer creates `~/.claude/skills/triage-bug/SKILL.md` with the same name and a simplified prompt, and changes nothing in the repo. Later, in a shared review, their triage results differ from everyone else's, and they are surprised because they believed they were running the team's skill. What best explains what happened?",
+    "options": [
+      "Both skills loaded together and the rubrics were merged in an unpredictable order",
+      "Their personal skill took precedence on their machine, so they stopped running the team's version",
+      "The name conflict disabled both skills, so Claude fell back on CLAUDE.md defaults",
+      "Their personal skill synced to teammates through version control and replaced the rubric"
+    ],
+    "correct": [
+      1
+    ],
+    "explain": "A personal skill with the same name as a project skill wins on that developer's machine, so they silently stop running the team's version; a different name such as `my-triage-bug` avoids this. Teammates are not affected, because `~/.claude/skills/` is personal and not shared via version control, so the sync option is wrong. Skills are not merged, and a name clash does not disable them or trigger a CLAUDE.md fallback, so those options describe behavior the task statement doesn't support.",
+    "concept": "Same-named personal skill shadows the project skill locally; use a different name"
+  },
+  {
+    "at": "2026-10-06T08:52:20.493Z",
+    "from": "On Friday you analysed a payments module in a session named ledger-audit. Over the weekend, a teammate's refactor rewrot",
+    "ts": "1.7 · review",
+    "stem": "Last Thursday you spent a long session named `checkout-latency` tracing slow requests through a 40-file order service, and the agent built a detailed picture of the call graph and caching layers. Over the weekend a teammate merged a small change that edited only two of those files, `cache.js` and `retry.js`. The other 38 files the agent read are unchanged. You want to keep investigating on Tuesday. What is the most proportionate way to continue?",
+    "options": [
+      "Start a new session and inject a summary of every earlier finding",
+      "Resume `checkout-latency` and tell it `cache.js` and `retry.js` changed",
+      "Resume `checkout-latency` and ask new questions without mentioning the merge",
+      "Fork `checkout-latency` so Thursday's analysis stays intact as a baseline"
+    ],
+    "correct": [
+      1
+    ],
+    "explain": "Most of the prior context is still valid and only two files changed, so resuming the named session and naming those files lets the agent re-analyze just them instead of re-exploring everything. Forking keeps the same stale reads of `cache.js` and `retry.js` and gives no notice of the change; it is for exploring divergent approaches from a shared baseline, not for handling staleness. Starting fresh with a summary throws away mostly valid context and is the better choice only when most tool results are stale. Resuming without mentioning the merge leaves the agent reasoning from outdated file contents.",
+    "concept": "Resume with targeted change notice when only few files changed"
+  },
+  {
+    "at": "2026-10-06T08:53:04.174Z",
+    "from": "Last Thursday you spent a long session named checkout-latency tracing slow requests through a 40-file order service, and",
+    "ts": "1.7 · review",
+    "stem": "Your team ran a named session, `billing-audit`, that read 25 files in a payments service to map how invoices are calculated. Several days later you need to continue the audit. Which situation would make starting a new session with an injected structured summary a better choice than resuming `billing-audit`?",
+    "options": [
+      "Only `tax.py` and `rounding.py` changed, while the other 23 files stayed identical",
+      "A refactor rewrote 20 of the 25 files, so most earlier tool results are outdated",
+      "No code changed, and you only want to ask a follow-up about discounts",
+      "You want to compare two refactoring plans starting from the same existing audit"
+    ],
+    "correct": [
+      1
+    ],
+    "explain": "When most of the files the agent read have been rewritten, its tool results are stale, so a fresh session seeded with a structured summary of the still-valid findings is more reliable than resuming. With only two changed files, most context remains valid, so resume and name those files for targeted re-analysis. Comparing two refactoring plans from a shared baseline calls for `fork_session`, not a fresh start. With no code changes, the prior context is fully valid, so resuming loses nothing and a summary only discards detail.",
+    "concept": "Fresh session with summary when most prior tool results are stale"
+  },
+  {
+    "at": "2026-10-06T08:54:00.221Z",
+    "from": "Your team ran a named session, billing-audit, that read 25 files in a payments service to map how invoices are calculate",
+    "ts": "1.7 · review",
+    "stem": "An engineer resumes a named session, `inventory-sync`, that spent a day mapping a warehouse service. Meanwhile, a teammate's merge renamed modules and moved stock-reservation logic into new files. The resumed agent confidently proposes a fix that cites functions at their old locations, and some no longer exist. The engineer gave no notes about the merge. What is the most likely root cause?",
+    "options": [
+      "The session name collided with another stored session and loaded the wrong history",
+      "The context window was too small to retain every file the agent read",
+      "The resumed session reused earlier file reads that no longer match the code",
+      "The agent needed a fork_session branch to see the updated repository files"
+    ],
+    "correct": [
+      2
+    ],
+    "explain": "Resuming restores the earlier conversation, including tool results that were accurate then but are stale after the rename and move, and the agent was never told about the changes. A name collision is not suggested; the history is the right one, just outdated. Window size is not the issue, since the agent remembers the old reads too well. fork_session creates parallel branches from a shared baseline and would carry the same stale results, so it does not refresh anything. The better move here is a fresh session seeded with a structured summary, or at minimum telling the agent which files changed.",
+    "concept": "Resumed sessions carry stale tool results after major code changes"
+  },
+  {
+    "at": "2026-10-06T08:55:57.159Z",
+    "from": "A four-phase codebase-audit pipeline is killed by a deploy halfway through phase 3. On restart it reruns phases 1 and 2,",
+    "ts": "5.4 · review",
+    "stem": "A migration-analysis system uses a coordinator that spawns subagents to map a 2,000-module monorepo. Each subagent writes its findings (modules covered, dependency edges, open questions) to `state/<agent_id>.json`, and the coordinator writes a `manifest.json` listing each agent's status and file path. The coordinator process crashes after 6 of 10 subagents finish. An engineer proposes restarting the coordinator from its saved conversation log alone, since it saw every subagent summary. Which situation shows why the manifest approach is the better recovery design?",
+    "options": [
+      "The log is long and verbose, so it can't say which agents finished or hold their exact findings",
+      "The log can't be stored on disk, so the coordinator has no way to reload it",
+      "The log would make the coordinator rerun all ten subagents, so only a larger window helps",
+      "The log is fine, but adding a prompt line to remember completed work would fix it"
+    ],
+    "correct": [
+      0
+    ],
+    "explain": "The correct option reflects the guide's design: structured per-agent state exports plus a manifest the coordinator loads on resume and injects into prompts, which gives precise status and specific findings rather than a verbose, degraded transcript. The disk-storage option is false, since logs can be saved, and that isn't the real weakness. The rerun-everything option wrongly blames the log and proposes a bigger context window, which doesn't address degradation or status. The prompt-line option is a prompt-only fix that can't recover state that was never persisted in a structured form.",
+    "concept": "Why manifest-based state exports beat transcript replay for crash recovery"
+  }
+]
