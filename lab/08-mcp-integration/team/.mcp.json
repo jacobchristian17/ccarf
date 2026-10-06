@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "tally-index": {
+      "command": "node",
+      "args": ["${TALLY_TOOLS_DIR}/tally-index.mjs"],
+      "env": { "TALLY_INDEX_TOKEN": "tk_live_7Qm2Yx9Rb4LpWc" }
+    },
+    "scratchpad": {
+      "command": "node",
+      "args": ["${TALLY_TOOLS_DIR}/scratchpad.mjs"]
+    }
+  }
+}

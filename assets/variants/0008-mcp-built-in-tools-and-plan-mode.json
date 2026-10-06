@@ -1,0 +1,19 @@
+[
+  {
+    "at": "2026-10-06T09:49:10.307Z",
+    "from": "Before changing formatMoney, you need every place it's used. The library's index.ts does export { formatMoney as fmt }, ",
+    "ts": "2.5",
+    "stem": "You rename the parameters of `sendAlert` in an internal `notify-kit` package. You run Grep for `sendAlert`, update every hit, and the tests pass. In production, the on-call paging flow breaks. The package's `index.js` has `export { sendAlert as notify }`, and `helpers/alerts.js` wraps it as `pageOncall`. The paging flow only calls `pageOncall`. What is the root cause of the missed callers?",
+    "options": [
+      "Grep cannot search nested package directories, so those files were skipped",
+      "The search used only the original name, missing the alias and wrapper names",
+      "Reading the index file alone shows every caller importing through it",
+      "Globbing all JavaScript files first would have exposed every remaining usage"
+    ],
+    "correct": [
+      1
+    ],
+    "explain": "The search covered only `sendAlert`, so callers using the alias `notify` or the wrapper `pageOncall` were never found. The fix is to list all exported names first, then Grep for each one. Grep searches nested directories fine, so the second option is wrong. Reading `index.js` alone is wrong because `pageOncall` callers import from `helpers/alerts.js`, not from the index. Globbing finds files by name, not usages, so it would not reveal them without reading everything up front.",
+    "concept": "Trace wrapper and aliased usages by searching every exported name"
+  }
+]

@@ -91,7 +91,7 @@ Verified 2026-10-01: every URL below returned HTTP 200 (after redirects) and its
 - [Common workflows — Claude Code Docs](https://code.claude.com/docs/en/common-workflows)
   Plan-then-execute, resuming sessions, worktrees. Use for: 3.4, 3.5, 1.7.
 - [MCP in Claude Code — Claude Code Docs](https://code.claude.com/docs/en/mcp)
-  Local/project/user scopes (`~/.claude.json` vs `.mcp.json`), `${VAR}` and `${VAR:-default}` expansion. Use for: 2.4.
+  Local/project/user scopes (`~/.claude.json` vs `.mcp.json`), `${VAR}` and `${VAR:-default}` expansion (an unset var stays as the literal `${VAR}` text), tool search on by default (`ENABLE_TOOL_SEARCH=false`), and `claude mcp reset-project-choices`. Verified 2026-10-06. Use for: 2.4.
 - [Non-interactive (headless) mode — Claude Code Docs](https://code.claude.com/docs/en/headless)
   `-p`, `--output-format json|stream-json`, structured output. Use for: 3.6.
 - [CLI reference — Claude Code Docs](https://code.claude.com/docs/en/cli-reference)
@@ -166,6 +166,7 @@ Verified 2026-10-01: every URL below returned HTTP 200 (after redirects) and its
   Reputation: **Unofficial / low–medium.** Many exist. None is endorsed by Anthropic. Quality is unverified and many are based on the exam guide's terminology rather than current docs.
 
 ## Gaps
+- **MCP resources, server `instructions` and plan mode's handling of MCP tools are thinly documented.** The Claude Code MCP page mentions resources only as `resources/list` discovery (checked 2026-10-06). The Lesson 8 lab showed three things: the agent reads resources via `ListMcpResourcesTool` / `ReadMcpResourceTool`; server `instructions` reach the model even when tools are deferred; plan mode refuses MCP tools that lack `readOnlyHint: true`. All three come from observed behaviour only.
 - **No official practice test.** The certification page and prep-course page mention none. The only official practice items are the exam guide's own sample questions (`md/CCAR-F/sections/14-sample-questions.md`).
 - **No dedicated official cert community.** I found no CCAR-F-specific forum or Discord channel. General Claude Discord only.
 - **Prompt-engineering sub-pages were consolidated.** "Multishot", "XML tags", "chain prompts", and "long-context tips" are now anchors on one best-practices page, so exam-guide wording may not match headings.

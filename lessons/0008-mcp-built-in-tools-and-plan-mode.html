@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP, Built-in Tools and Plan Mode</title>
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+</head>
+<body>
+<main><article>
+
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Lesson 8 of 13 · Domains 2 (18%) and 3 (20%)</div>
+<h1>MCP integration, built-in tools and plan mode</h1>
+<p class="subtitle">This finishes Exercise 2. Lesson 7 decided who gets an <em>instruction</em> and when. This lesson asks the same about <em>tools</em>: who gets an MCP server and where its secret comes from, which tool the agent reaches for (and why it might pick the wrong one), and whether a task deserves a plan before the first edit.</p>
+
+<div class="meta">
+  <span><b>Task statements</b> 2.4 · 2.5 · 3.4 · 3.5</span>
+  <span><b>Time</b> ~12 min read · ~40 min build · ~15 min quiz</span>
+  <span><b>Scenarios</b> Code Generation with Claude Code · Developer Productivity</span>
+</div>
+
+<details class="recall">
+  <summary>Warm-up: Lesson 7 retrieval, lab status, then two predictions</summary>
+  <div>From memory: (1) For each place an instruction can live (user CLAUDE.md, project CLAUDE.md, subdirectory CLAUDE.md, a <code>paths:</code> rule, a skill), say <em>who</em> gets it and <em>when</em> it loads. (2) What does <code>context: fork</code> buy you, and what happened to text typed after the slash command? (3) Does <code>allowed-tools</code> stop a skill from writing a file?<br>
+  <b>Lab status (graded 2026-10-06):</b> <code>l7:check</code> 7/42, the starter. L5 (9/44) and L6 (13/57) are also at the starter. This lab doesn't depend on any of them: live runs use the L7 <em>reference</em> config.<br>
+  Then predict. (a) You improve an MCP tool's description so that it clearly says "use this instead of Grep". Does Haiku now pick the MCP tool for "who calls <code>toCents</code>?" (b) <code>.mcp.json</code> says <code>"TALLY_INDEX_TOKEN": "${TALLY_INDEX_TOKEN}"</code>, and a teammate never set the variable. Does the server fail to start, start without a token, or something else? §6 has what we saw.</div>
+</details>
+
+<h2>1 · Where an MCP server is configured (2.4)</h2>
+
+<div class="table-wrap"><table>
+  <tr><th>Scope</th><th>File</th><th>Who gets it</th><th>Use it for</th></tr>
+  <tr><td><b>Project</b></td><td><code>.mcp.json</code> at the repo root</td><td><b>Everyone</b> who clones the repo</td><td>Shared team tooling: the code index, the issue tracker</td></tr>
+  <tr><td><b>User</b></td><td><code>~/.claude.json</code>, top-level <code>mcpServers</code></td><td><b>Only you</b>, in every project</td><td>Personal or experimental servers</td></tr>
+  <tr><td>Local (not in the guide)</td><td><code>~/.claude.json</code>, under this project's entry</td><td>Only you, in this project only</td><td>The default for <code>claude mcp add</code></td></tr>
+</table></div>
+
+<p>This mirrors Lesson 7. A server in <code>.mcp.json</code> reaches every teammate, in the same way the project CLAUDE.md does. The exam's two failure modes are also the same. One: the team server sits in someone's <code>~/.claude.json</code>, so a new hire doesn't have it. Two: one developer's experiment is committed in <code>.mcp.json</code>, so everyone now launches it. <code>claude mcp add --scope project|user|local</code> writes to the right file. Interactive sessions ask before using a project's <code>.mcp.json</code> servers for the first time. <code>claude -p</code> and the SDK don't ask.<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/mcp">Connect Claude Code to tools via MCP</a>: the scope table ("Local · Project · User"), "For security reasons, Claude Code prompts for approval in interactive sessions before using project-scoped servers", and <code>claude mcp reset-project-choices</code>. Task statement 2.4, <code>md/CCAR-F/sections/08</code>.</span></p>
+
+<p><b>All configured servers connect together, and their tools are available simultaneously.</b> The lab's <code>servers</code> command shows it: <code>tally-index</code> (source <code>project</code>) and <code>scratchpad</code> (the user-level stand-in) both connect, and the agent gets all five of their tools at once.</p>
+
+<h3>Secrets: <code>${VAR}</code> expansion</h3>
+<pre>{
+  "mcpServers": {
+    "tally-index": {
+      "command": "node",
+      "args": ["${TALLY_TOOLS_DIR}/tally-index.mjs"],
+      "env": { "TALLY_INDEX_TOKEN": "${TALLY_INDEX_TOKEN}" }   <span class="c"># each developer's own token, from their shell</span>
+    }
+  }
+}</pre>
+<ul>
+  <li>Expansion works in <code>command</code>, <code>args</code>, <code>env</code>, <code>url</code> and <code>headers</code>. <code>${VAR:-default}</code> gives a fallback. Never put a real token in the default, because the default is committed too.</li>
+  <li>A literal token in <code>.mcp.json</code> is in every clone <em>and</em> in git history. Deleting it later doesn't undo that, so rotate the token.</li>
+  <li><b>An unset variable doesn't stop the server.</b> The docs: "the config still loads … and uses the unexpanded <code>${VAR}</code> text as-is", with a warning in <code>claude mcp list</code>. Your server receives the string <code>${TALLY_INDEX_TOKEN}</code> as its token. A server should recognise that and say so in its error. The lab's server does.<span class="sn-ref"></span><span class="sidenote">Same page, "Environment variable expansion in .mcp.json". Verified 2026-10-06.</span></li>
+</ul>
+
+<h3>Community server or your own?</h3>
+<p>For a standard integration (Jira, GitHub, Sentry, Postgres), use an <b>existing community or vendor server</b>. Someone else maintains the API mapping and the auth. Build a <b>custom server</b> only for workflows that are specific to your team: an index of your codebase's own aliases, or your internal deploy process. "We wrote our own Jira server" is a distractor unless the scenario gives a reason.</p>
+
+<h2>2 · Getting the agent to use the right tool (2.4)</h2>
+
+<p>The exam's scenario: the team's MCP server has a tool that does more than a built-in (it resolves aliases, or knows the schema), and the agent still reaches for Grep. <b>The exam's answer is the tool description.</b> A tool called <code>find_references</code> described as "Find references." gives the model no reason to prefer it over a tool it knows well. A good description says:</p>
+<ol>
+  <li>what it does that the built-in can't ("follows re-export aliases and wrapper functions that text search misses"),</li>
+  <li>when to use it, and that it should be used <em>instead of Grep</em> for that question,</li>
+  <li>what it takes as input and what it returns (<code>file:line</code> per call site),</li>
+  <li>what it doesn't cover ("not comments or strings: use Grep for those").</li>
+</ol>
+<p>That's the Lesson 2 rule (descriptions are the model's main signal for choosing a tool), applied across the MCP/built-in boundary.</p>
+
+<h3>Resources: a catalog instead of exploration</h3>
+<p>Tools <em>do</em> things. <b>Resources</b> expose <em>content</em> the client can read. To answer "where's the VAT rate stored?", an agent with only <code>list_tables</code> and <code>describe_table</code> has to explore: list, then describe one table, then another. A <code>tally://schema</code> resource gives it the whole catalog in one read. Use resources for catalogs like issue summaries, documentation trees and database schemas, which "give agents visibility into available data without requiring exploratory tool calls".<span class="sn-ref"></span><span class="sidenote"><a href="https://modelcontextprotocol.io/specification/2026-07-28/server/resources">MCP spec: Resources</a> ("exposing data that provides context"). In Claude Code the agent reads resources through its <code>ListMcpResourcesTool</code> / <code>ReadMcpResourceTool</code> tools (observed in the lab).</span></p>
+<pre>server.registerResource("schema", "tally://schema", {
+  title: "tally database schema",
+  description: "Every table with all columns, types and notes. Read this before describing tables.",
+  mimeType: "text/markdown",
+}, async uri =&gt; ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: schemaMarkdown() }] }));</pre>
+
+<div class="callout exam"><span class="label">Exam answer vs current reality</span>
+<div class="vs">
+  <div><h4>Exam (2.4)</h4>Tools from all configured servers are "discovered at connection time and available simultaneously". If the agent prefers Grep, <b>enhance the MCP tool's description</b>. Scopes: <code>.mcp.json</code> (project) vs <code>~/.claude.json</code> (user).</div>
+  <div><h4>Today (CLI 2.1.290, Haiku 4.5)</h4><b>Tool search is on by default.</b> MCP tools are <em>deferred</em>: the model sees their names, and a definition (with its description) only loads when the model searches for it. In the lab, the improved description changed <b>nothing</b>: Haiku never searched and used Grep instead. What worked was server <code>instructions</code>, which are always in the system prompt, or <code>alwaysLoad: true</code> on the server (or <code>ENABLE_TOOL_SEARCH=false</code>). In plan mode, MCP tools without <code>readOnlyHint: true</code> are <b>refused</b>. There's also a third scope, <em>local</em>.</div>
+</div>
+On the exam, the description is the fix. In real configs, write the good description <em>and</em> put a when-to-use line in the server's instructions. Instructions matter whenever the tool is deferred, and the description matters once it's loaded (and for the search itself).<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/mcp">MCP docs</a>: tool search is on by default, and without it there's <code>ENABLE_TOOL_SEARCH=false</code>. <code>alwaysLoad</code>: SDK type docs, "all tools from this server are always included in the prompt and never deferred behind tool search". Lab runs: §6.</span></div>
+
+<h2>3 · Built-in tools (2.5)</h2>
+
+<div class="table-wrap"><table>
+  <tr><th>You need to…</th><th>Tool</th><th>Example</th></tr>
+  <tr><td>find text <em>inside</em> files</td><td><b>Grep</b> (ripgrep regex)</td><td>all callers of <code>toCents</code>, an error message, every import of a module</td></tr>
+  <tr><td>find files by <em>name or path</em></td><td><b>Glob</b></td><td><code>**/*.test.tsx</code>, every <code>CLAUDE.md</code></td></tr>
+  <tr><td>change one spot</td><td><b>Edit</b></td><td><code>old_string</code> must match <b>exactly once</b>, or set <code>replace_all</code></td></tr>
+  <tr><td>change a spot whose text isn't unique</td><td><b>Read</b> the whole file, then <b>Write</b> it back</td><td>two identical <code>return Math.round(value);</code> lines, and only one should change</td></tr>
+</table></div>
+
+<p><b>Build understanding incrementally.</b> Grep finds the entry points, then Read follows the imports from there. Reading every file up front fills the context with code that doesn't matter (Lesson 6's context degradation). <b>Trace through wrappers by name.</b> Grep for <code>toCents</code> doesn't find <code>parseAmount(…)</code> (a re-export alias) or <code>amountToCents(…)</code> (a wrapper). First list every name the function is exported under, then search for each of them. That's exactly what the lab's MCP <code>find_references</code> does in one call.<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/tools-reference">Tools reference</a> (Read, Write, Edit, Grep, Glob). Task statement 2.5.</span></p>
+
+<h2>4 · Plan mode vs direct execution (3.4), and iterating (3.5)</h2>
+
+<div class="table-wrap"><table>
+  <tr><th>Plan mode first</th><th>Execute directly</th></tr>
+  <tr><td>Large-scale or multi-file changes; library migrations touching 45+ files; architectural decisions; several valid approaches with different infrastructure needs</td><td>Well-understood changes with a clear scope: a one-file bug fix with a clear stack trace; adding one date-validation conditional</td></tr>
+</table></div>
+<p>Plan mode is read-only. Claude explores and proposes, and nothing changes until you approve, so a wrong approach costs a re-plan instead of a rework. Enter it with Shift+Tab, <code>/plan</code>, <code>claude --permission-mode plan</code>, <code>"defaultMode": "plan"</code>, or SDK <code>permissionMode: "plan"</code>. <b>Combine the two</b>: plan the migration, approve the plan, then let it execute. For the verbose discovery phase of a long task, the read-only <b>Explore subagent</b> keeps file dumps out of the main context and returns a summary (the <code>context: fork</code> + <code>agent: Explore</code> you used in Lesson 7).<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/permission-modes">Permission modes</a> (plan mode) and <a href="https://code.claude.com/docs/en/sub-agents">Subagents</a> ("Explore": read-only, three thoroughness levels). Task statement 3.4.</span></p>
+
+<div class="table-wrap"><table>
+  <tr><th>Iterating with Claude, when…</th><th>…do this (3.5)</th></tr>
+  <tr><td>a prose spec is interpreted differently each time</td><td>give 2–3 concrete <b>input → output examples</b></td></tr>
+  <tr><td>you want steady progress on a behaviour</td><td><b>write the tests first</b> (expected behaviour, edge cases, performance), then share the failures each round</td></tr>
+  <tr><td>the domain is unfamiliar to you</td><td>use the <b>interview pattern</b>: have Claude ask <em>you</em> questions (cache invalidation? failure modes?) before it builds</td></tr>
+  <tr><td>one edge case is wrong (nulls in a migration)</td><td>a specific test case with the example input and the expected output</td></tr>
+  <tr><td>several problems <b>interact</b></td><td>describe them all in <b>one</b> detailed message, because fixing one changes the others</td></tr>
+  <tr><td>the problems are <b>independent</b></td><td>fix them <b>one at a time</b></td></tr>
+</table></div>
+
+<h2>5 · Build: MCP for <code>tally</code> (Exercise 2b)</h2>
+
+<p>The lab is <code>lab/08-mcp-integration/</code>. Live runs use the Lesson 7 fixture, plus <code>fixture-extra/</code> (a re-export alias, a wrapper and their callers, and a file with a duplicated line), plus the L7 reference config. You edit three things: <code>team/.mcp.json</code> (committed), <code>team/personal/claude.json</code> (stands in for your <code>~/.claude.json</code>), and <code>servers/tally-index.ts</code>. The servers are bundled into <code>%TEMP%\ccarf-l8-tools\</code>, outside the repo, so the model can't just grep their source. <code>${TALLY_TOOLS_DIR}</code> points there.</p>
+
+<div class="callout warn"><span class="label">Commands (PowerShell, in lab/)</span>
+<pre>cd C:\Users\wsenr\repos\ccarf\lab
+npm run l8:check                         <span class="c"># grader: 26 checks, ~3 s, talks to your server over stdio, no model</span>
+npm run l8:ask -- servers                <span class="c"># which servers connected, from which scope; is a token committed?</span>
+npm run l8:ask -- refs                   <span class="c"># "who calls toCents?": MCP tool vs Grep, and caller files found (of 5)</span>
+npm run l8:ask -- schema                 <span class="c"># VAT-rate question: exploratory calls vs the resource</span>
+npm run l8:ask -- edit                   <span class="c"># change one of two identical lines</span>
+npm run l8:ask -- task bugfix            <span class="c"># also: migration, feature · with $env:MODE="plan" or "direct"</span>
+$env:SOLUTION="1" · $env:NOTOKEN="1" · $env:ENABLE_TOOL_SEARCH="false"
+Remove-Item Env:SOLUTION, Env:NOTOKEN, Env:MODE, Env:ENABLE_TOOL_SEARCH -ErrorAction SilentlyContinue</pre>
+Runs take 8–60 s on Haiku 4.5. <code>task migration</code> and <code>task feature</code> take longer.</div>
+
+<ol class="steps">
+  <li><b>Baseline.</b> <code>npm run l8:check</code> (expect 8/26). Run <code>servers</code> and <code>refs</code>. Which scope does <code>scratchpad</code> come from? Does the runner warn about a committed token? How many tool calls does <code>refs</code> take, and is <code>find_references</code> one of them?</li>
+  <li><b>TODO 1: scope.</b> Move <code>scratchpad</code> out of <code>team/.mcp.json</code> into <code>team/personal/claude.json</code>. Run <code>servers</code>: both still connect, now from different scopes.</li>
+  <li><b>TODO 2: credentials.</b> Replace the literal token with <code>${TALLY_INDEX_TOKEN}</code>. Run <code>servers</code>, then run it again with <code>$env:NOTOKEN="1"</code>. What does the server receive, and what does the agent say?</li>
+  <li><b>TODO 3: description.</b> In <code>servers/tally-index.ts</code>, write the <code>find_references</code> description (the four parts from §2). Run <code>refs</code>. Did anything change? Now add server <code>instructions</code> (the hint is in the TODO comment) and run <code>refs</code> again. Then try <code>$env:ENABLE_TOOL_SEARCH="false"</code> with the starter description. Finally, mark all three tools <code>annotations: { readOnlyHint: true }</code>. You'll see why in step 6.</li>
+  <li><b>TODO 4: resource.</b> Register <code>tally://schema</code>. Run <code>schema</code> before and after, and count the calls to the tally-index server.</li>
+  <li><b>Built-ins and plan mode.</b> Run <code>edit</code>: did Edit hit a non-unique match, and how did the model get around it? Then run <code>task bugfix</code> and <code>task migration</code>, each with <code>MODE=direct</code> and with <code>MODE=plan</code>. Compare the files changed, the tool calls, and whether a plan came back.</li>
+  <li><b>Stretch.</b> Put <code>tally-index</code> in <code>personal/claude.json</code> as well, with a different token. Which definition does <code>servers</code> show? (In Claude Code, local beats project, and project beats user.)</li>
+</ol>
+
+<h2>6 · What we observed (2026-10-06, Haiku 4.5, CLI 2.1.290, SDK v0.3.289)</h2>
+<details class="recall">
+  <summary>Scopes: what <code>servers</code> reports</summary>
+  <div>Each connected server comes back with a <code>source</code>. <code>tally-index</code> was <code>project</code> (read from <code>.mcp.json</code> with <code>settingSources: ["project"]</code>, with no approval prompt in the SDK), and the personal server was the user-level stand-in. All five MCP tools were available in the same session. Two tooling notes. <code>strictMcpConfig: true</code> (which the L4–L7 labs used) <b>drops <code>.mcp.json</code> entirely</b>. Without it, your claude.ai connectors join too (80 extra tools here), so the runner hides them from its report.</div>
+</details>
+<details class="recall">
+  <summary>Prediction check (b): the unset variable</summary>
+  <div>With <code>$env:NOTOKEN="1"</code>, the server still showed as <b>connected</b>. Claude Code passed the literal text <code>${TALLY_INDEX_TOKEN}</code> as the token, just as the docs say. Before we added a check, our server accepted it, because the string isn't empty. Now it returns a <code>permission</code> error that names the cause, and the agent told the user to set the variable in their shell. The lesson for server authors: treat <code>${…}</code> as "missing", not as a token.</div>
+</details>
+<details class="recall">
+  <summary>Prediction check (a): does a better description win over Grep?</summary>
+  <div><b>Not with tool search on.</b> "Who calls <code>toCents</code>?" on the starter: <b>23 calls</b> (Grep×7, Read×13, Glob×3), all 5 caller files found, <code>find_references</code> never called. With the full reference description: <b>10 calls</b> (Grep×5, Read×5), and still no MCP tool. The model saw only the tool's name in the deferred list and never searched for it.<br>
+  <b>Adding server <code>instructions</code></b> ("for who-calls questions use find_references instead of Grep…") gave <b>2 calls</b> (ToolSearch → <code>find_references</code>), with 5/5 files, twice in a row.<br>
+  <b>With <code>ENABLE_TOOL_SEARCH=false</code></b>, even the starter's "Find references." got used in 1 call. Once the tool is in the prompt, its self-explanatory name is enough for this question. Descriptions earn their keep when names are ambiguous or the tool needs input-format guidance (Lesson 2).</div>
+</details>
+<details class="recall">
+  <summary>The resource: <code>schema</code></summary>
+  <div><b>Without the resource:</b> ToolSearch → <code>list_tables</code> → <code>describe_table(line_items)</code> → <code>describe_table(tax_rates)</code>, which is 3 server calls. <b>With it:</b> one <code>ReadMcpResourceTool(tally://schema)</code> read (the resource tool itself was deferred, so there was a ToolSearch first). On 4 tables the saving is small. The exploratory pattern grows with the catalog, though, and the single read doesn't.</div>
+</details>
+<details class="recall">
+  <summary>Built-ins: <code>edit</code> on a duplicated line</summary>
+  <div>Haiku Read the file, then made <b>one</b> successful Edit that changed only <code>roundHalfEven</code>. It widened <code>old_string</code> to include the function signature, which made the anchor unique. That's the first fix to try. Read + Write is the fallback the exam expects when no unique anchor exists. It then spent 11 more calls looking for tests to run. That's the L7 CLAUDE.md's "run pnpm test" rule at work in a session with no shell.</div>
+</details>
+<details class="recall" id="obs-plan">
+  <summary>Plan mode vs direct</summary>
+  <div><div class="table-wrap"><table>
+  <tr><th>Task</th><th>Direct</th><th>Plan mode</th></tr>
+  <tr><td><code>bugfix</code> (one line, clear stack trace)</td><td><b>2 calls</b> (Read, Edit), 18 s, 1 file fixed</td><td>8 calls, 22 s, 0 files changed: a plan for a one-line fix</td></tr>
+  <tr><td><code>migration</code> (7 files, aliases, a wrapper)</td><td><b>57 calls</b> (31 inside a subagent), 128 s, 7 files rewritten with no checkpoint</td><td>18 calls, 30 s, 0 files changed. A plan listing all 7 call sites and two design decisions (delete the wrapper module; keep <code>number</code> fields), and it flagged a behaviour question (<code>NaN</code> on bad input) for you to decide</td></tr>
+  <tr><td><code>feature</code> (multi-currency)</td><td>not run, since there was nothing to decide yet</td><td>38 calls, 66 s, 0 files changed. It ended with a list of <b>questions for you</b> (rounding, FX source, per-customer or per-invoice currency): the interview pattern, unprompted</td></tr>
+</table></div>
+<b>Three surprises.</b> (1) Plan mode <b>blocked our MCP tools</b>: "Cannot call mcp__tally-index__find_references while in plan mode." The model fell back to Grep. Marking the tools <code>annotations: { readOnlyHint: true }</code> fixed it, and the next plan used <code>find_references</code> 3 times. That's a real reason to annotate read-only MCP tools, and the grader checks for it. (2) Plan mode still <b>writes one file: the plan</b>, by default to <code>~/.claude/plans/</code>. The runner sets <code>plansDirectory: ".plans"</code> so it stays in the temp repo. (3) <code>ExitPlanMode</code> (the "approve this plan" step) is <b>disabled with no interactive approver</b>. In the SDK the model said so and asked you to tell it to proceed. Interactively, you'd get the approval prompt.</div>
+</details>
+<details class="recall">
+  <summary>Reference solution</summary>
+  <div><code>lab/08-mcp-integration/solution/</code> (config + server), graded by <code>npm run l8:check:solution</code> (26/26). Run it live with <code>$env:SOLUTION="1"</code>.</div>
+</details>
+
+<h2>7 · Scenario check</h2>
+<p>Twelve new items, then six spaced-review items: three from Lesson 7 and three from Lesson 6. Commit to an answer before you click.</p>
+
+<section class="quiz" data-quiz="0008-mcp-built-in-tools-and-plan-mode">
+<div class="item" data-ts="2.4">
+    <div class="stem">Every developer on a team should get the GitHub MCP server when they clone the repository. Each developer has their own personal access token. How should the team configure it?</div>
+    <ol class="opts">
+      <li>In each developer's ~/.claude.json, added by hand as part of their onboarding</li>
+      <li data-correct>In .mcp.json, with the token read from ${GITHUB_TOKEN} in each user's shell</li>
+      <li>In .mcp.json, with one shared bot token committed and rotated every month</li>
+      <li>In the project CLAUDE.md, with setup steps and the token for newcomers</li>
+    </ol>
+    <div class="explain">Shared team tooling goes in the project-scoped <code>.mcp.json</code>, and <code>${GITHUB_TOKEN}</code> expansion keeps each developer's credential out of git. A works for today's team but depends on every new hire repeating the setup. C commits a secret to every clone and to the history. D puts a secret in a committed file and turns configuration into prose.</div>
+  </div>
+
+  <div class="item" data-ts="2.4">
+    <div class="stem">A developer wants to try an experimental vector-search MCP server for a week before proposing it to the team. Teammates shouldn't see it or be asked to approve it. Where should they configure it?</div>
+    <ol class="opts">
+      <li>In .mcp.json on a feature branch that is never merged into main</li>
+      <li>In .mcp.json, with a note telling teammates to decline the approval prompt</li>
+      <li data-correct>In their own user-level ~/.claude.json file, which is never committed to git</li>
+      <li>In a .claude/rules/ file that is scoped to the developer's feature folder</li>
+    </ol>
+    <div class="explain">User scope (<code>~/.claude.json</code>, for example via <code>claude mcp add --scope user</code>) is for personal or experimental servers. A leaks the server to anyone who checks out the branch, and it's lost on switching branches. B still makes everyone see the prompt, and JSON has no comments. D confuses instructions with server configuration.</div>
+  </div>
+
+  <div class="item" data-ts="2.4">
+    <div class="stem">Your team's MCP server exposes <code>trace_calls</code>, which resolves re-export aliases and wrapper functions. Its description is "Traces calls." For "what breaks if I change <code>parseDate</code>?", the agent keeps running Grep and misses the aliased callers. What is the most effective first fix?</div>
+    <ol class="opts">
+      <li>Remove Grep from the agent's available tools so it must use trace_calls</li>
+      <li data-correct>Expand the description: what it resolves, its output, when to prefer it</li>
+      <li>Add a classifier in front that routes every code-search question to trace_calls</li>
+      <li>Rename the tool to grep_plus so the model associates it with searching</li>
+    </ol>
+    <div class="explain">The model chooses tools mainly by their descriptions, and "Traces calls." gives it no reason to prefer this tool over Grep. The exam's fix is a detailed description: capabilities, outputs, and when to use it instead of the built-in. A removes Grep, which is still the right tool for strings and comments. C over-engineers before the cheap fix has been tried. D is a gimmick. (Today, also add a when-to-use line to the server's instructions, because deferred tools show only their names. See §2.)</div>
+  </div>
+
+  <div class="item" data-ts="2.4">
+    <div class="stem">An agent answering questions about a 300-table warehouse starts every session with dozens of <code>list_tables</code> and <code>describe_table</code> calls before it can write a query. What change most directly reduces these exploratory calls?</div>
+    <ol class="opts">
+      <li>Increase the agent's max turns so the exploration can finish each time</li>
+      <li>Paste the complete 300-table schema text into the project's root CLAUDE.md file</li>
+      <li>Cache each describe_table result with a PostToolUse hook for later session reuse</li>
+      <li data-correct>Expose a schema catalog as an MCP resource the agent can read</li>
+    </ol>
+    <div class="explain">MCP resources exist to expose content catalogs (schemas, issue summaries, documentation trees), so that the agent can see what's available without exploring. A accepts the waste. B loads a huge, drifting copy into every session, whatever the task. C still pays for the first exploration in every session, and the hook doesn't put the results anywhere the model reads them.</div>
+  </div>
+
+  <div class="item" data-ts="2.4">
+    <div class="stem">A team wants Claude Code to read and update Jira tickets. One engineer proposes writing an in-house Jira MCP server. Another proposes adopting a widely used existing Jira MCP server. Nothing about their Jira usage is unusual. What should they do?</div>
+    <ol class="opts">
+      <li>Write the in-house server, since owning the code avoids any outside dependency</li>
+      <li data-correct>Adopt the existing server, and save custom ones for team-specific workflows only</li>
+      <li>Skip MCP and have Claude call the Jira REST API with curl</li>
+      <li>Write the in-house server, but copy over the existing one's tool descriptions</li>
+    </ol>
+    <div class="explain">For standard integrations, an existing community or vendor server is the default: it's already maintained, and the API mapping and auth are done. Custom servers are for workflows specific to your team. A and D take on maintenance with no stated benefit. C gives up structured tools, error contracts and per-tool permissions.</div>
+  </div>
+
+  <div class="item" data-ts="2.5">
+    <div class="stem">Before changing <code>formatMoney</code>, you need every place it's used. The library's <code>index.ts</code> does <code>export { formatMoney as fmt }</code>, and <code>utils/display.ts</code> wraps it as <code>showPrice</code>. Which approach finds all the usages?</div>
+    <ol class="opts">
+      <li>Grep for formatMoney across the codebase and treat those hits as complete</li>
+      <li>Glob for every TypeScript file, then Read each one looking for usages</li>
+      <li data-correct>List all the names it's exported under, then Grep for each one</li>
+      <li>Read index.ts only, since every caller imports through the library's index file</li>
+    </ol>
+    <div class="explain">Tracing through wrapper modules means identifying all exported names first (<code>formatMoney</code>, <code>fmt</code>, <code>showPrice</code>) and then searching for each one. A misses the aliased and wrapped callers. B reads everything up front and floods the context. D assumes something the scenario contradicts: <code>showPrice</code> callers don't import <code>formatMoney</code> at all.</div>
+  </div>
+
+  <div class="item" data-ts="2.5">
+    <div class="stem">Claude needs to change the timeout in one of three identical <code>retry: { attempts: 3, timeout: 500 }</code> blocks in a config file. Edit fails because <code>old_string</code> matches 3 times, and the surrounding lines are near-identical too. What is the most reliable next step?</div>
+    <ol class="opts">
+      <li>Retry Edit with replace_all set, which updates every matching block at once</li>
+      <li data-correct>Read the full file, then Write it back with that block changed</li>
+      <li>Retry the identical Edit, as the match count may differ next time</li>
+      <li>Ask the user to edit that block by hand, since tools can't</li>
+    </ol>
+    <div class="explain">When Edit can't find unique anchor text, Read + Write is the reliable fallback: load the full contents, change the one block, write the file. A changes all three blocks. C is the same call with the same result. D gives up on a task the tools can do.</div>
+  </div>
+
+  <div class="item" data-ts="3.4">
+    <div class="stem">Which <b>two</b> tasks most clearly call for plan mode before any edits?</div>
+    <ol class="opts">
+      <li data-correct>Moving 60 files from a callback HTTP client to a promise-based one</li>
+      <li>Fixing a null check in one function, using a clear stack trace</li>
+      <li data-correct>Choosing between webhooks and polling to integrate with a new partner API</li>
+      <li>Adding a check rejecting end dates before start dates in one form</li>
+    </ol>
+    <div class="explain">Plan mode is for large multi-file changes (a 60-file library migration) and for decisions between valid approaches with different infrastructure needs (webhooks need a public endpoint; polling needs a scheduler). B and D are well-scoped, single-location changes where direct execution is right.</div>
+  </div>
+
+  <div class="item" data-ts="3.4">
+    <div class="stem">A three-phase refactor starts with a discovery phase that reads about 120 files to map how a deprecated module is used. In earlier attempts, the session's context filled with file contents before the refactor began. What should you do?</div>
+    <ol class="opts">
+      <li>Run discovery in the main session, then /clear before starting the refactor</li>
+      <li data-correct>Run discovery in an Explore subagent that returns only a short summary</li>
+      <li>Skip discovery and let the refactor phase find usages as it goes</li>
+      <li>Split discovery across three sessions, then paste all their outputs back together</li>
+    </ol>
+    <div class="explain">The Explore subagent keeps verbose discovery output in its own context and hands back a summary, so the main conversation keeps room for the refactor. A throws away the findings along with the noise. C trades a known problem for missed usages. D moves the same volume of text back into one context by hand.</div>
+  </div>
+
+  <div class="item" data-ts="3.4">
+    <div class="stem">You must migrate a service from one ORM to another. About 40 files are affected, and there are two credible approaches to transactions. What is the most effective workflow?</div>
+    <ol class="opts">
+      <li>Execute directly file by file, reverting any file that turns out wrong</li>
+      <li>Stay in plan mode for the whole migration, approving each edit separately</li>
+      <li data-correct>Plan mode to investigate and choose, then execute the approved plan directly</li>
+      <li>Ask for two complete implementations, then keep the one whose tests pass</li>
+    </ol>
+    <div class="explain">Combine the modes: plan mode for safe investigation and the design decision, then direct execution of the agreed plan. A risks rework across 40 files. B adds friction after the decisions are already made. D doubles the implementation cost to make a decision that planning settles more cheaply.</div>
+  </div>
+
+  <div class="item" data-ts="3.5">
+    <div class="stem">You've asked Claude three times in prose to "normalise phone numbers to the standard international format". Each attempt treats extensions and missing country codes differently. What is the most effective next step?</div>
+    <ol class="opts">
+      <li>Rewrite the instruction in capital letters and stress that it is critical</li>
+      <li>Ask for a longer prose explanation of the format before implementing it</li>
+      <li data-correct>Give two or three concrete inputs, each with its exact expected output</li>
+      <li>Switch to a larger model, which will interpret the prose more consistently</li>
+    </ol>
+    <div class="explain">When prose is interpreted inconsistently, 2–3 concrete input → output examples (one with an extension, one with no country code) are the most effective way to pin down the transformation. A and B add more of the same ambiguous prose. D guesses at capacity when the problem is a missing specification.</div>
+  </div>
+
+  <div class="item" data-ts="3.5">
+    <div class="stem">Claude's first draft of a CSV importer has three problems. The date parser assumes US order. Because of that, the deduplication key (which includes the date) merges rows that are different. And the error report counts the merged rows as successes. How should you give feedback?</div>
+    <ol class="opts">
+      <li data-correct>All three in one message, since fixing the dates changes the others</li>
+      <li>The date problem first, then the other two one at a time</li>
+      <li>The error-count problem first, since the users see that one most directly</li>
+      <li>No specifics: a request to rewrite the whole importer from scratch instead</li>
+    </ol>
+    <div class="explain">These issues interact: the date bug causes the bad merges, which cause the wrong counts. Send them together in one detailed message so the fixes are designed together. Sequential fixes (B, C) suit independent problems. Here they would mean several rounds of patching symptoms. D throws away the specific diagnosis.</div>
+  </div>
+
+  <div class="item" data-ts="3.2 · review">
+    <div class="stem">A team's <code>/dependency-audit</code> skill reads dozens of lockfiles and prints long tables. Developers complain that after running it, the rest of their session is sluggish and Claude refers back to irrelevant audit details. What change fits best?</div>
+    <ol class="opts">
+      <li>Move the audit procedure into the project CLAUDE.md so it's always known</li>
+      <li data-correct>Add context: fork so a subagent runs it and returns a summary</li>
+      <li>Add disable-model-invocation: true so that only developers can trigger the skill themselves</li>
+      <li>Tell developers to run /clear after every audit to recover their context</li>
+    </ol>
+    <div class="explain"><code>context: fork</code> runs the skill in a subagent, so only its final result enters the main conversation. A costs context in every session and still dumps the output. C controls who can invoke it, not where the output goes. D throws away the rest of the session. Lesson 7, <a href="../reference/claude-md-rules-and-skills.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="3.3 · review">
+    <div class="stem">Infrastructure conventions should apply to every <code>.tf</code> file. Terraform lives in <code>infra/</code>, in <code>services/*/deploy/</code>, and in a few module folders. Today the conventions sit in <code>infra/CLAUDE.md</code>, so service deploy files don't get them. What is the best fix?</div>
+    <ol class="opts">
+      <li>Copy infra/CLAUDE.md into every directory that has any Terraform files in it</li>
+      <li>Move the conventions into the root CLAUDE.md so every session gets them</li>
+      <li data-correct>Add a .claude/rules/ file whose frontmatter sets paths: ["**/*.tf"] for Terraform files</li>
+      <li>Add a /terraform skill that developers run before editing any Terraform file</li>
+    </ol>
+    <div class="explain">A path-scoped rule with a file-type glob reaches every <code>.tf</code> file, wherever it lives, and stays out of context otherwise. A duplicates the text, so the copies drift. B loads infrastructure rules into every unrelated session. D depends on people remembering to run it. Lesson 7.</div>
+  </div>
+
+  <div class="item" data-ts="3.1 · review">
+    <div class="stem">A developer prefers that Claude explain each change in two sentences. A teammate prefers no explanation at all. Both work in the same repository. Where should each preference go?</div>
+    <ol class="opts">
+      <li>In the project CLAUDE.md, as two sections labelled with each person's name</li>
+      <li data-correct>In each person's ~/.claude/CLAUDE.md, a file which never leaves their own machine</li>
+      <li>In a .claude/rules/ file per person, scoped with their own paths: globs</li>
+      <li>In the project's .mcp.json, as an environment variable set for each person</li>
+    </ol>
+    <div class="explain">Personal preferences belong in user-level memory (or <code>CLAUDE.local.md</code>), which isn't shared through git. A sends both preferences to everyone, and they contradict each other. C scopes by files, not by people. D isn't a place for instructions. Lesson 7.</div>
+  </div>
+
+  <div class="item" data-ts="1.7 · review">
+    <div class="stem">On Friday you named a session <code>billing-audit</code> after it analysed 35 files. Over the weekend, teammates changed 2 of those files. On Monday you want to continue the audit. What is the best move?</div>
+    <ol class="opts">
+      <li>Resume billing-audit as is, since most of its earlier analysis still holds</li>
+      <li>Start a fresh session that re-reads all 35 files from the beginning</li>
+      <li data-correct>Resume billing-audit and name the two changed files for a targeted re-read</li>
+      <li>Fork billing-audit so the Friday analysis is kept safe from new changes</li>
+    </ol>
+    <div class="explain">When most prior context is valid, resume, and tell the session exactly what changed so it re-reads only those files. A trusts stale tool results without warning (in the L6 lab this gave confidently wrong answers). B throws away valid work. D copies the stale context instead of fixing it. Lesson 6, <a href="../reference/sessions-and-exploration.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="5.4 · review">
+    <div class="stem">Two hours into exploring a legacy codebase, Claude starts describing "a typical repository pattern" where it earlier named the exact <code>LedgerStore</code> class and its file. What should you set up to keep the later questions grounded?</div>
+    <ol class="opts">
+      <li>Restart the exploration from scratch whenever its answers become far too vague</li>
+      <li data-correct>A scratchpad file of key findings with file:line, consulted for later questions</li>
+      <li>Repeat the original exploration instructions at the start of every new message</li>
+      <li>Switch to a model with a bigger context window for what remains</li>
+    </ol>
+    <div class="explain">Context degradation in long sessions is handled by persisting findings outside the context (a scratchpad with exact references), along with subagents and <code>/compact</code>. A throws away the progress. C repeats instructions, not findings. D only postpones the problem. Lesson 6.</div>
+  </div>
+
+  <div class="item" data-ts="1.6 · review">
+    <div class="stem">A single review pass over a 20-file pull request gives detailed comments on the first few files, superficial ones later, and misses a cross-file contract change. How should the review be restructured?</div>
+    <ol class="opts">
+      <li>Use one pass with a stronger instruction to review every file equally</li>
+      <li>Run three identical full-PR passes, keeping only issues that all three report</li>
+      <li data-correct>Run per-file local passes, plus a separate cross-file pass over their findings</li>
+      <li>Review only the files with the largest diffs, skipping the smaller changes</li>
+    </ol>
+    <div class="explain">Attention dilution across many files is fixed by decomposition: focused per-file passes for local issues, then an integration pass for data flow across files. A asks the same overloaded pass to try harder. B suppresses real issues that only some runs catch. D drops coverage on purpose. Lesson 6.</div>
+  </div>
+</section>
+
+<div class="source"><span class="label">Primary source · read this next</span>
+<p style="margin:.3rem 0 0"><a href="https://code.claude.com/docs/en/mcp"><b>Connect Claude Code to tools via MCP</b></a>: the scope table, "Environment variable expansion in .mcp.json", and the tool search section. Then <a href="https://code.claude.com/docs/en/permission-modes"><b>Permission modes</b></a> for plan mode, and <a href="https://code.claude.com/docs/en/best-practices"><b>Best practices</b></a> for explore → plan → code and iterating with tests. Reread task statements 2.4, 2.5 (<code>md/CCAR-F/sections/08</code>), 3.4 and 3.5 (<code>09</code>). Cheat sheet: <a href="../reference/mcp-tools-and-plan-mode.html">reference/mcp-tools-and-plan-mode</a>.</p>
+</div>
+
+<p class="ask">Ask me about anything here, for example whether a server in your own projects belongs in <code>.mcp.json</code> or <code>~/.claude.json</code>, or how tool search affects your MCP servers. When you're done, paste your <code>l8:check</code> score and the quiz summary line, plus three numbers from your runs: <code>refs</code> tool calls before and after your description, then after adding instructions; whether <code>find_references</code> was used each time; and the files changed by <code>task migration</code> in plan mode vs direct.</p>
+
+<div class="nav-lessons"><a href="0007-claude-md-rules-commands-and-skills.html">← Lesson 7 · CLAUDE.md, rules, commands and skills</a><span>Next: Lesson 9 · Claude Code in CI, review prompts →</span></div>
+
+</article></main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

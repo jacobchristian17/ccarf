@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP, Built-in Tools and Plan Mode</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main><article>
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Reference · TS 2.4, 2.5, 3.4, 3.5</div>
+<h1>MCP integration, built-in tools &amp; plan mode</h1>
+<p class="subtitle">A one-page cheat sheet, taught in <a href="../lessons/0008-mcp-built-in-tools-and-plan-mode.html">Lesson 8</a>. For MCP, decide <b>who</b> gets each server and <b>where its secret comes from</b>. For a task, decide <b>which tool finds it</b> and <b>whether to plan first</b>.</p>
+
+<h2>MCP scopes (2.4)</h2>
+<table>
+  <tr><th>Scope</th><th>Stored in</th><th>Who gets it</th><th>Use for</th></tr>
+  <tr><td><b>Project</b></td><td><code>.mcp.json</code> at the repo root</td><td>Everyone who clones (git)</td><td>Shared team tooling</td></tr>
+  <tr><td><b>User</b></td><td><code>~/.claude.json</code> (top-level <code>mcpServers</code>)</td><td>Only you, every project</td><td>Personal / experimental servers</td></tr>
+  <tr><td>Local <i>(not in the guide)</i></td><td><code>~/.claude.json</code>, under this project's entry</td><td>Only you, this project</td><td>Default of <code>claude mcp add</code></td></tr>
+</table>
+<p><code>claude mcp add --scope project|user|local …</code>. Precedence on a name clash: local &gt; project &gt; user. Interactive sessions ask for approval before using <code>.mcp.json</code> servers (<code>claude mcp reset-project-choices</code>). <code>claude -p</code> and the SDK don't ask. All configured servers connect together, and their tools are available <b>simultaneously</b>.</p>
+
+<h2>Secrets: env var expansion</h2>
+<pre>{ "mcpServers": { "tally-index": {
+    "command": "node", "args": ["${TALLY_TOOLS_DIR}/tally-index.mjs"],
+    "env": { "TALLY_INDEX_TOKEN": "${TALLY_INDEX_TOKEN}" } } } }    <span class="c"># each dev sets it in their shell</span></pre>
+<p>Expansion works in <code>command</code>, <code>args</code>, <code>env</code>, <code>url</code> and <code>headers</code>. <code>${VAR:-default}</code> gives a fallback, so never put a real token in the default. <b>If the variable is unset</b>, the config still loads, and the server receives the literal text <code>${VAR}</code>, with only a warning in <code>claude mcp list</code>. A committed literal token is in every clone <i>and</i> in git history: rotate it.</p>
+
+<h2>Making the agent use the MCP tool (2.4)</h2>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td>Agent uses Grep instead of a more capable MCP tool</td><td><b>Exam:</b> rewrite the tool description: what it does that built-ins can't, inputs, outputs, when to use it and when not to. <b>Today:</b> also server <code>instructions</code> (always in the system prompt) or <code>alwaysLoad: true</code>, because MCP tools are deferred behind tool search</td></tr>
+  <tr><td>Agent makes many exploratory calls to learn what exists</td><td>Expose a content catalog as an <b>MCP resource</b> (schema, issue summaries, doc tree)</td></tr>
+  <tr><td>Standard integration (Jira, GitHub, Sentry)</td><td>Use an existing <b>community server</b>. Build a custom server only for team-specific workflows</td></tr>
+</table>
+
+<h2>Built-in tools (2.5)</h2>
+<table>
+  <tr><th>Need</th><th>Tool</th></tr>
+  <tr><td>Find text <i>inside</i> files: callers, error messages, imports</td><td><b>Grep</b> (ripgrep, regex)</td></tr>
+  <tr><td>Find files by <i>name/path</i>: <code>**/*.test.tsx</code></td><td><b>Glob</b></td></tr>
+  <tr><td>Change one spot</td><td><b>Edit</b>: <code>old_string</code> must match <b>uniquely</b> (or <code>replace_all</code>)</td></tr>
+  <tr><td>Edit can't find a unique anchor</td><td><b>Read</b> the full file, then <b>Write</b> it back</td></tr>
+  <tr><td>Understand a codebase</td><td>Incrementally: Grep for the entry points, then Read and follow imports. <b>Not</b> "read every file first"</td></tr>
+  <tr><td>Trace usage through wrapper modules</td><td>List every exported name (aliases, wrappers) first, then Grep for <b>each</b> name</td></tr>
+</table>
+
+<h2>Plan mode vs direct execution (3.4)</h2>
+<table>
+  <tr><th>Plan mode</th><th>Direct execution</th></tr>
+  <tr><td>Large-scale or multi-file changes, library migrations (45+ files), architectural decisions, several valid approaches with different infrastructure needs</td><td>Well-scoped, clear changes: a one-file bug fix with a clear stack trace, adding one validation conditional</td></tr>
+</table>
+<p>Plan mode is read-only exploration and design before any change, which prevents costly rework. Enter it with Shift+Tab, <code>/plan</code>, <code>--permission-mode plan</code>, <code>"defaultMode": "plan"</code>, or SDK <code>permissionMode: "plan"</code>. <b>Combine</b> them: plan the migration, then execute the approved plan directly. Use the <b>Explore subagent</b> (read-only) for verbose discovery, so only a summary lands in the main context.</p>
+
+<h2>Iterative refinement (3.5)</h2>
+<table>
+  <tr><th>Situation</th><th>Technique</th></tr>
+  <tr><td>Prose spec gets interpreted inconsistently</td><td>2–3 concrete <b>input → output examples</b></td></tr>
+  <tr><td>Progressive improvement of a behaviour</td><td><b>Tests first</b> (expected behaviour, edge cases, performance), then iterate by sharing the failures</td></tr>
+  <tr><td>Unfamiliar domain (caching, failure modes)</td><td><b>Interview pattern</b>: have Claude ask you questions before it implements</td></tr>
+  <tr><td>An edge case is wrong (nulls in a migration)</td><td>A specific test case: example input + expected output</td></tr>
+  <tr><td>Several issues that <b>interact</b></td><td>All of them in <b>one</b> detailed message</td></tr>
+  <tr><td>Several <b>independent</b> issues</td><td>Fix them <b>sequentially</b>, one at a time</td></tr>
+</table>
+
+<p class="ask">Back to <a href="../lessons/0008-mcp-built-in-tools-and-plan-mode.html">Lesson 8</a> · <a href="claude-md-rules-and-skills.html">CLAUDE.md, rules &amp; skills</a> · <a href="tool-design-and-errors.html">Tool design &amp; errors</a></p>
+</article></main>
+</body>
+</html>

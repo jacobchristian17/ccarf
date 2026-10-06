@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "scratchpad": {
+      "command": "node",
+      "args": ["${TALLY_TOOLS_DIR}/scratchpad.mjs"]
+    }
+  }
+}

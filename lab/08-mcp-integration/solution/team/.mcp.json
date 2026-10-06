@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tally-index": {
+      "command": "node",
+      "args": ["${TALLY_TOOLS_DIR}/tally-index.mjs"],
+      "env": { "TALLY_INDEX_TOKEN": "${TALLY_INDEX_TOKEN}" }
+    }
+  }
+}
