@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "findings": {
+      "type": "array",
+      "description": "One entry per issue. An empty array is a valid review.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "file": { "type": "string", "description": "Repo-relative path, e.g. src/refunds.ts" },
+          "line": { "type": "integer", "minimum": 1, "description": "Line in the NEW version of the file" },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "category": { "type": "string", "enum": ["security", "bug", "contract", "comment"] },
+          "issue": { "type": "string", "description": "What is wrong and what input or caller triggers it" },
+          "suggested_fix": { "type": "string" },
+          "detected_pattern": { "type": "string", "description": "Short kebab-case name for the code construct that triggered this finding, e.g. sql-string-interpolation" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "status": { "type": "string", "enum": ["new", "still_open"], "description": "Re-reviews only: new issue, or one already reported that the new commits did not fix" }
+        },
+        "required": ["file", "line", "severity", "category", "issue", "suggested_fix", "detected_pattern", "confidence"]
+      }
+    }
+  },
+  "required": ["findings"]
+}

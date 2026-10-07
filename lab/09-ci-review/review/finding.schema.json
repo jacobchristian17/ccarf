@@ -1,0 +1,8 @@
+{
+  "$comment": "TODO 1 (3.6): the JSON Schema passed to `claude -p --output-format json --json-schema`. The starter returns one free-text blob, so CI has nothing to post as inline comments. Replace it with a schema that has a findings array: file, line, severity (enum), category (enum), issue, suggested_fix, detected_pattern and confidence (0-1), plus an optional status (new | still_open) for re-reviews. See the lesson, section 2.",
+  "type": "object",
+  "properties": {
+    "review": { "type": "string" }
+  },
+  "required": ["review"]
+}

@@ -46,6 +46,7 @@ Verified 2026-10-01: every URL below returned HTTP 200 (after redirects) and its
 - [Prompting best practices — Anthropic Docs](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)
   One page with sections: be clear and direct, use examples (few-shot), XML tags, long-context prompting (long data at the top, query at the end, up to 30% better), chaining complex prompts, subagent orchestration, reducing hallucinations in agentic coding. Use for: 4.1, 4.2, 1.6, 5.1.
   The old sub-page URLs (`.../be-clear-and-direct`, `multishot-prompting`, `use-xml-tags`, `chain-prompts`, `long-context-tips`) now redirect to anchors on this page.
+  Re-checked 2026-10-06: "Use examples effectively" says "Include 3–5 examples for best results". The exam guide says 2–4.
 - [Prompt engineering overview — Anthropic Docs](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview)
   Index page and when to use prompt engineering. Use for: 4.x orientation.
 - [Reduce hallucinations — Anthropic Docs](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations)
@@ -94,14 +95,17 @@ Verified 2026-10-01: every URL below returned HTTP 200 (after redirects) and its
   Local/project/user scopes (`~/.claude.json` vs `.mcp.json`), `${VAR}` and `${VAR:-default}` expansion (an unset var stays as the literal `${VAR}` text), tool search on by default (`ENABLE_TOOL_SEARCH=false`), and `claude mcp reset-project-choices`. Verified 2026-10-06. Use for: 2.4.
 - [Non-interactive (headless) mode — Claude Code Docs](https://code.claude.com/docs/en/headless)
   `-p`, `--output-format json|stream-json`, structured output. Use for: 3.6.
+  Re-checked 2026-10-06 (CLI 2.1.290): `--json-schema` output arrives in the envelope's `structured_output` field (verified live). An invalid schema exits with an error. `--bare` is "recommended for scripted and SDK calls" and will become the default for `-p`. It skips CLAUDE.md, hooks, skills and `.mcp.json`, and needs `ANTHROPIC_API_KEY`. In `-p`, calls that need approval are denied (`permission_denials`), not left waiting. `--permission-prompts none` and `--permission-mode dontAsk` are for unattended runs.
 - [CLI reference — Claude Code Docs](https://code.claude.com/docs/en/cli-reference)
   `--print/-p`, `--output-format`, `--json-schema` (print mode only), `--resume/-r <id or name>`, `--fork-session`, `--continue`. Use for: 1.7, 3.6.
 - [GitHub Actions — Claude Code Docs](https://code.claude.com/docs/en/github-actions)
   claude-code-action setup and CI review patterns. Use for: 3.6.
+  Re-checked 2026-10-06: `anthropics/claude-code-action@v1` with `prompt` + `claude_args`. Under Best practices: "Define project standards in CLAUDE.md … review criteria". The packaged review workflow skips PRs that already have a Claude comment.
 - [Tools reference — Claude Code Docs](https://code.claude.com/docs/en/tools-reference)
   Built-in tools (Read, Write, Edit, Bash, Grep, Glob, Agent …) and what each does. Use for: 2.5.
 - [Best practices for Claude Code — Claude Code Docs](https://code.claude.com/docs/en/best-practices)
-  Explore → plan → code, test-driven iteration, interviewing the user first, context hygiene. (The old anthropic.com/engineering/claude-code-best-practices link redirects here.) Use for: 3.4, 3.5, 5.4.
+  Explore → plan → code, test-driven iteration, interviewing the user first, context hygiene. (The old anthropic.com/engineering/claude-code-best-practices link redirects here.) Use for: 3.4, 3.5, 5.4, 4.6.
+  Re-checked 2026-10-06: the Writer/Reviewer pattern ("A fresh context improves code review since Claude won't be biased toward code it just wrote"), "Add an adversarial review step" (a reviewer "sees only the diff and the criteria … not the reasoning", and "a reviewer prompted to find gaps will usually report some"), and fan-out with `claude -p` ("Test on a few files, then run on all"). Use for: 4.6, 3.6, 4.5.
 - [Glossary — Claude Code Docs](https://code.claude.com/docs/en/glossary)
   Table of deprecated and renamed terms (headless → non-interactive, custom commands → skills, slash commands → commands). Use for: terminology.
 

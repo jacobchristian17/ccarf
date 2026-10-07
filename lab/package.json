@@ -27,6 +27,9 @@
     "l8:check": "tsx 08-mcp-integration/check.ts",
     "l8:check:solution": "tsx 08-mcp-integration/check.ts solution",
     "l8:ask": "tsx 08-mcp-integration/run.ts",
+    "l9:check": "tsx 09-ci-review/check.ts",
+    "l9:check:solution": "tsx 09-ci-review/check.ts solution",
+    "l9:ask": "tsx 09-ci-review/run.ts",
     "quiz": "tsx quiz/server.ts"
   },
   "dependencies": {

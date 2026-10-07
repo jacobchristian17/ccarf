@@ -1,0 +1,20 @@
+# TODO 1b (3.6): the CI job. As written, it hangs: `claude` without -p waits for interactive input.
+# Make it non-interactive, structured (--output-format json + --json-schema review/finding.schema.json),
+# limited to read-only tools, run on every push to the PR, and post the result with review/post.ts.
+name: Claude review
+on:
+  pull_request:
+    types: [opened]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude "Review this pull request"

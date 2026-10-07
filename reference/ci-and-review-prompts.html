@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code in CI and Review Prompts</title>
+<link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main><article>
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Reference · TS 3.6, 4.1, 4.2, 4.6</div>
+<h1>Claude Code in CI &amp; review prompts</h1>
+<p class="subtitle">A one-page cheat sheet, taught in <a href="../lessons/0009-claude-code-in-ci-and-review-prompts.html">Lesson 9</a>. A CI review needs to <b>run unattended</b>, return output a <b>machine can post</b>, apply <b>criteria a developer trusts</b>, and come from a reviewer that <b>didn't write the code</b>.</p>
+
+<h2>Running in CI (3.6)</h2>
+<pre>claude -p --output-format json \
+  --json-schema "$(cat review/finding.schema.json)" \
+  --allowedTools "Read,Grep,Glob" --max-turns 20 &lt; prompt.txt &gt; review.json
+jq '.structured_output.findings' review.json</pre>
+<table>
+  <tr><th>Need</th><th>Use</th></tr>
+  <tr><td>Job hangs waiting for input</td><td><b><code>-p</code> / <code>--print</code></b>: run, print, exit. (Not <code>CLAUDE_HEADLESS</code>, <code>--batch</code> or <code>&lt; /dev/null</code>: those don't exist or don't work)</td></tr>
+  <tr><td>Parseable output</td><td><code>--output-format json</code>: one result envelope. The fields are <code>result</code>, <code>session_id</code>, <code>is_error</code>, <code>subtype</code>, <code>num_turns</code> and <code>total_cost_usd</code></td></tr>
+  <tr><td>Output matching a schema, to post as inline comments</td><td>Add <b><code>--json-schema</code></b>. The validated object is in <b><code>structured_output</code></b>. Check <code>is_error</code> / <code>subtype === "success"</code> first</td></tr>
+  <tr><td>Project context (review criteria, testing standards, fixtures)</td><td><b>CLAUDE.md</b>, which CI-invoked Claude Code reads like any session</td></tr>
+  <tr><td>Tools in an unattended run</td><td><code>--allowedTools</code> pre-approves tools. In <code>-p</code>, anything that would need approval is denied, and the run doesn't hang. A reviewer only needs Read/Grep/Glob</td></tr>
+  <tr><td>A second step on the same session</td><td>Capture <code>session_id</code>, then <code>--resume &lt;id&gt;</code>. Don't do this to <i>review</i> generated code (see 4.6)</td></tr>
+</table>
+<p><b>Today:</b> the docs recommend <code>--bare</code> for CI. It skips CLAUDE.md, hooks, skills and MCP discovery, and needs <code>ANTHROPIC_API_KEY</code>. In bare mode, pass context with <code>--append-system-prompt-file</code>. GitHub: <code>anthropics/claude-code-action@v1</code> with <code>prompt</code> + <code>claude_args</code>.</p>
+
+<h3>Re-runs, tests</h3>
+<table>
+  <tr><th>Symptom</th><th>Fix</th></tr>
+  <tr><td>Every push re-posts the same comments</td><td>Put the <b>prior findings</b> in the prompt, and report only <b>new or still-unaddressed</b> issues (fixed ones disappear). Mark them <code>status: new | still_open</code>, and only <code>new</code> becomes a new comment</td></tr>
+  <tr><td>Generated tests duplicate existing ones</td><td>Put the <b>existing test file in context</b></td></tr>
+  <tr><td>Generated tests are low-value or ignore fixtures</td><td>Document <b>testing standards, valuable-test criteria and the fixtures</b> in CLAUDE.md</td></tr>
+</table>
+
+<h2>Explicit criteria (4.1)</h2>
+<table>
+  <tr><th>Vague (fails)</th><th>Explicit (works)</th></tr>
+  <tr><td>"Check that comments are accurate"</td><td>"Flag a comment only when its claimed behaviour <b>contradicts</b> what the code does"</td></tr>
+  <tr><td>"Be conservative" / "only high-confidence findings"</td><td><b>Categories</b> to report (bugs, security) and to <b>skip</b> (style, documented local patterns). Confidence goes in a field, not into a filter</td></tr>
+  <tr><td>"Rate severity appropriately"</td><td>Each level defined with a <b>concrete code example</b></td></tr>
+</table>
+<p>False positives cost trust across <i>all</i> categories, the accurate ones included. If one category is noisy, <b>disable that category temporarily</b> while you fix its prompt, rather than tuning the whole review "down".</p>
+
+<h2>Few-shot examples (4.2)</h2>
+<ul>
+  <li>The most effective fix when <b>detailed instructions still give inconsistent output</b> (format, severity, judgement).</li>
+  <li><b>2–4 targeted examples</b> (exam). The docs say 3–5, wrapped in <code>&lt;example&gt;</code> tags. Make them relevant and diverse.</li>
+  <li>Aim them at <b>ambiguous cases</b>, and show the <b>reasoning</b> for choosing this action over the plausible alternative.</li>
+  <li>Include an <b>acceptable pattern → no finding</b> example. It cuts false positives and still generalises.</li>
+  <li>Show the exact output format: <b>location, issue, severity, suggested fix</b>.</li>
+  <li>For extraction: examples of <b>varied document formats</b> fix empty or null required fields and reduce hallucination.</li>
+</ul>
+
+<h2>Multi-instance &amp; multi-pass review (4.6)</h2>
+<table>
+  <tr><th>Problem</th><th>Architecture</th></tr>
+  <tr><td>Generator reviewing its own code in the same session</td><td>A <b>second, independent instance</b> without the generator's reasoning context. "Review carefully" instructions and extended thinking don't remove the anchoring</td></tr>
+  <tr><td>Large multi-file PR: uneven depth, misses, contradictions</td><td><b>Per-file local passes</b> + a separate <b>cross-file integration pass</b> (data flow, changed contracts). Not a bigger model, not consensus voting</td></tr>
+  <tr><td>Deciding which findings a human checks</td><td>A verification pass that <b>self-reports confidence per finding</b>, used to route (calibrate it against labelled samples first)</td></tr>
+</table>
+
+<p class="ask">Back to <a href="../lessons/0009-claude-code-in-ci-and-review-prompts.html">Lesson 9</a> · <a href="mcp-tools-and-plan-mode.html">MCP, built-in tools &amp; plan mode</a> · <a href="sessions-and-exploration.html">Sessions &amp; exploration</a></p>
+</article></main>
+</body>
+</html>

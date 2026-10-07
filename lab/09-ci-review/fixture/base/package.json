@@ -1,0 +1,6 @@
+{
+  "name": "tally-billing",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "vitest run" }
+}

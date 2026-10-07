@@ -1,0 +1,31 @@
+{
+  "pr1": [
+    { "id": "T1", "kind": "security", "file": "src/db/invoices.ts", "anchor": "WHERE customer_id = '[$]", "span": 4,
+      "what": "searchInvoices builds SQL by string interpolation of customerId and status: SQL injection" },
+    { "id": "T2", "kind": "bug", "file": "src/refunds.ts", "anchor": "UPDATE invoices SET refunded_cents", "span": 12,
+      "what": "no check that amountCents <= paidCents - refundedCents: refunds can exceed what was paid" },
+    { "id": "T3", "kind": "bug", "file": "src/discount.ts", "anchor": "code.expiresAt. > now", "span": 2,
+      "what": "expiry comparison reversed: valid codes rejected as expired, expired codes accepted" },
+    { "id": "T4", "kind": "contract", "file": "src/email/receipt.ts", "anchor": "formatDollars.total.", "span": 4,
+      "alsoFile": "src/invoices.ts", "alsoAnchor": "export function getInvoiceTotal", "alsoSpan": 2,
+      "what": "getInvoiceTotal now returns cents, but receipt.ts still formats it as dollars: emails show 100x the total" },
+    { "id": "T5", "kind": "comment", "file": "src/refunds.ts", "anchor": "Returns null if the invoice", "span": 3,
+      "what": "comment says it returns null for a missing invoice, but the code throws NotFoundError" }
+  ],
+  "noise": [
+    { "id": "N1", "file": "src/refunds.ts", "anchor": "let paidAt", "span": 1, "what": "let where const would do (style)" },
+    { "id": "N2", "file": "src/api/routes.ts", "anchor": "body: any", "span": 0, "what": "body typed any: documented team convention" },
+    { "id": "N3", "file": "scripts/seed.ts", "anchor": "console.log", "span": 2, "what": "console.log in a dev script: allowed by CLAUDE.md" },
+    { "id": "N4", "file": "src/refunds.ts", "anchor": "24 . 60 . 60", "span": 0, "what": "inline ms-per-day arithmetic (style)" }
+  ],
+  "pr2": {
+    "fixed": ["T1", "T3"],
+    "open": ["T2", "T4", "T5"],
+    "new": [
+      { "id": "T6", "kind": "bug", "file": "src/discount.ts", "anchor": "subtotalCents < code.minSubtotal", "span": 2,
+        "what": "minSubtotal is in dollars but is compared with a subtotal in cents: the minimum is effectively 100x too low" },
+      { "id": "T7", "kind": "contract", "file": "tests/discount.test.ts", "anchor": "const codes", "span": 2,
+        "what": "minSubtotal is now a required field of DiscountCode, so the existing test's code literal no longer type-checks" }
+    ]
+  }
+}

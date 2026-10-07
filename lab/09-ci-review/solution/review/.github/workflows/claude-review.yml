@@ -1,0 +1,39 @@
+name: Claude review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @anthropic-ai/claude-code
+      - name: Build the prompt (first review, or a re-review with the prior findings)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git diff origin/${{ github.base_ref }}...HEAD > pr.diff
+          gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+            --jq '[.[] | select(.user.login == "github-actions[bot]") | {path, line, body}]' > prior.json
+          node review/build-prompt.mjs pr.diff prior.json > prompt.txt
+      - name: Review (non-interactive, schema-validated, read-only tools)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude -p --output-format json \
+            --json-schema "$(cat review/finding.schema.json)" \
+            --allowedTools "Read,Grep,Glob" \
+            --max-turns 20 < prompt.txt > review.json
+      - name: Post inline comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node review/post-comments.mjs review.json   # wraps toInlineComments() from review/post.ts

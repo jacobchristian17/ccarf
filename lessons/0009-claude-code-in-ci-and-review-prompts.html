@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code in CI and Review Prompts</title>
+<link rel="stylesheet" href="../assets/course.css">
+<link rel="stylesheet" href="../assets/quiz.css">
+</head>
+<body>
+<main><article>
+
+<div class="crumbs"><a href="../index.html">CCAR-F course</a> · Lesson 9 of 13 · Domains 3 (20%) and 4 (20%)</div>
+<h1>Claude Code in CI, and review prompts that developers trust</h1>
+<p class="subtitle">This is the exam's "Claude Code for Continuous Integration" scenario from end to end. The job runs unattended and returns findings a script can post as inline comments. The criteria keep the noise down, the examples keep the output consistent, and the reviewer didn't write the code it reviews.</p>
+
+<div class="meta">
+  <span><b>Task statements</b> 3.6 · 4.1 · 4.2 · 4.6</span>
+  <span><b>Time</b> ~12 min read · ~45 min build · ~15 min quiz</span>
+  <span><b>Scenario</b> Claude Code for Continuous Integration</span>
+</div>
+
+<details class="recall">
+  <summary>Warm-up: Lesson 8 retrieval, lab status, then two predictions</summary>
+  <div>From memory: (1) A server in <code>.mcp.json</code> and a server in <code>~/.claude.json</code>: who gets each? What does a teammate's server receive if <code>${TALLY_INDEX_TOKEN}</code> is unset? (2) The exam's fix when the agent prefers Grep over a better MCP tool, and the fix that actually worked in the lab. (3) Plan mode or direct execution for a one-line fix with a clear stack trace, and for a 7-file migration?<br>
+  <b>Lab status (graded 2026-10-06):</b> <code>l8:check</code> 8/26, the starter. L5–L7 are also at the starter. This lab doesn't depend on any of them.<br>
+  Then predict. (a) A reviewer prompt that says "Flag anything that could be improved. Be conservative: only report high-confidence findings." It runs on a PR that also contains <code>let</code>-instead-of-<code>const</code>, a documented <code>body: any</code> convention and a <code>console.log</code> in a dev script. How many of those does Haiku flag? (b) The same session that wrote some code now reviews it. Does it catch fewer defects than a fresh session? §7 has what we saw.</div>
+</details>
+
+<h2>1 · Running Claude Code in a pipeline (3.6)</h2>
+
+<pre>claude -p --output-format json \
+  --json-schema "$(cat review/finding.schema.json)" \
+  --allowedTools "Read,Grep,Glob" --max-turns 20 &lt; prompt.txt &gt; review.json</pre>
+
+<div class="table-wrap"><table>
+  <tr><th>Piece</th><th>What it does in CI</th></tr>
+  <tr><td><b><code>-p</code></b> / <code>--print</code></td><td>Runs the prompt, prints the result and exits. Without it, <code>claude</code> opens an interactive session and the job <b>hangs</b> waiting for input. <code>CLAUDE_HEADLESS</code>, <code>--batch</code> and <code>&lt; /dev/null</code> are the exam's fake fixes.</td></tr>
+  <tr><td><code>--output-format json</code></td><td>One JSON <b>result envelope</b> instead of prose: <code>result</code>, <code>session_id</code>, <code>is_error</code>, <code>subtype</code> (<code>"success"</code>, <code>"error_max_turns"</code>, …), <code>num_turns</code>, <code>total_cost_usd</code></td></tr>
+  <tr><td><b><code>--json-schema</code></b></td><td>The output must match your schema. The validated object arrives in <b><code>structured_output</code></b>, so a script can turn each finding into an inline PR comment. Your script still has to check <code>is_error</code> and <code>subtype</code> first.</td></tr>
+  <tr><td><b>CLAUDE.md</b></td><td>A <code>-p</code> run loads the repo's CLAUDE.md like any session. That's where CI gets project context: testing standards, fixture conventions, review criteria.</td></tr>
+  <tr><td><code>--allowedTools</code></td><td>Pre-approves tools. A reviewer needs only Read/Grep/Glob. In <code>-p</code>, any call that would need approval is <b>denied</b> (and listed in <code>permission_denials</code>), not left waiting.</td></tr>
+</table></div>
+<p>The envelope from a real run in this lab, trimmed: <code>{"type":"result","subtype":"success","is_error":false,"num_turns":2,"session_id":"9806…","total_cost_usd":0.054,"result":"{…}","structured_output":{"primes":[3,7],"confidence":0.99}}</code>.<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/headless">Run Claude Code programmatically</a>: "the structured output in the <code>structured_output</code> field". An invalid schema exits with "Error: --json-schema is not a valid JSON Schema". Task statement 3.6, <code>md/CCAR-F/sections/09</code>.</span></p>
+
+<div class="callout exam"><span class="label">Exam answer vs current reality</span>
+<div class="vs">
+  <div><h4>Exam (3.6)</h4><code>-p</code> prevents the hang. <code>--output-format json</code> + <code>--json-schema</code> give machine-parseable findings. <b>CLAUDE.md</b> is the mechanism for giving CI-invoked Claude Code its project context.</div>
+  <div><h4>Today (CLI 2.1.290)</h4>All three still hold. The docs now also <b>recommend <code>--bare</code></b> for scripted runs: it "will become the default for <code>-p</code>". Bare mode <b>skips CLAUDE.md</b>, hooks, skills, <code>.mcp.json</code> and your <code>~/.claude</code>, and it needs <code>ANTHROPIC_API_KEY</code> (it ignores the subscription login). Context then goes in with <code>--append-system-prompt-file</code>. On GitHub, the packaged route is <code>anthropics/claude-code-action@v1</code> (<code>prompt</code> + <code>claude_args</code>).</div>
+</div>
+On the exam, CLAUDE.md is the answer for CI context. In a real pipeline, either run without <code>--bare</code> so CLAUDE.md loads, or pass the same file explicitly. The lab can't demonstrate bare mode: it needs API credits.<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/headless">Headless docs</a>, "Start faster with bare mode". <a href="https://code.claude.com/docs/en/github-actions">GitHub Actions</a>: "Define project standards in CLAUDE.md … review criteria".</span></div>
+
+<h2>2 · From findings to PR comments, and the second push</h2>
+
+<p>A finding schema that CI can post from needs a <b>location</b> (<code>file</code>, <code>line</code>), <b>severity</b> and <b>category</b> as enums, the <b>issue</b>, a <b>suggested_fix</b>, a <b><code>detected_pattern</code></b> and a <b>confidence</b>. <code>detected_pattern</code> is a short name for the code construct that triggered the finding, so you can later count which patterns developers dismiss (4.4). Confidence goes in a field, which leaves the routing decision to code (§5). Your <code>post.ts</code> maps each finding to <code>{ path, line, side: "RIGHT", body }</code>.</p>
+
+<div class="table-wrap"><table>
+  <tr><th>CI problem</th><th>Exam fix</th></tr>
+  <tr><td>Each push re-runs the review, and the same comments get posted again</td><td>Put the <b>prior findings</b> in the prompt and ask for <b>only new or still-unaddressed</b> issues. Fixed issues drop out. In the lab, a <code>status: new | still_open</code> field lets code post only the new ones.</td></tr>
+  <tr><td>Generated tests repeat scenarios the suite already covers</td><td>Give Claude the <b>existing test file</b> in context</td></tr>
+  <tr><td>Generated tests are shallow, or they ignore the team's factories</td><td>Document <b>testing standards, what a valuable test is, and the available fixtures</b> in CLAUDE.md</td></tr>
+</table></div>
+
+<h2>3 · Explicit criteria beat "be conservative" (4.1)</h2>
+
+<p>"Check that comments are accurate" makes Claude decide what <em>accurate</em> means, PR by PR. "Flag a comment only when the behaviour it claims <b>contradicts</b> what the code does" is a test it can apply. Precision comes from <b>categories</b>: say what to report (bugs, security, broken contracts) and what to skip (style, documented local patterns). It doesn't come from confidence wording. The guide is blunt that "be conservative" and "only report high-confidence findings" <b>fail to improve precision</b>.</p>
+<ul>
+  <li><b>False positives spread.</b> A noisy category teaches developers to ignore the accurate ones too. The first step is to <b>temporarily disable the high-false-positive category</b> while you fix its prompt, not to turn the whole review "down".</li>
+  <li><b>Severity drifts</b> unless each level is defined with a <b>concrete code example</b> ("critical: <code>`…WHERE email = '${email}'`</code>").</li>
+</ul>
+<p>Anthropic's own guidance: "If you want 'above and beyond' behavior, explicitly request it rather than relying on the model to infer this from vague prompts." And the Claude Code best-practices page warns that "a reviewer prompted to find gaps will usually report some, even when the work is sound … Tell the reviewer to flag only gaps that affect correctness".<span class="sn-ref"></span><span class="sidenote"><a href="https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices">Prompting best practices</a>, "Be clear and direct". <a href="https://code.claude.com/docs/en/best-practices">Best practices for Claude Code</a>, "Add an adversarial review step". Task statement 4.1, <code>md/CCAR-F/sections/10</code>.</span></p>
+
+<h2>4 · Few-shot examples (4.2)</h2>
+
+<p>When <b>detailed instructions still give inconsistent output</b>, examples are the most effective next step: they show the format and the judgement instead of describing them. The guide's recipe:</p>
+<ol>
+  <li><b>2–4 targeted examples</b>, aimed at the <b>ambiguous</b> cases, not the easy ones.</li>
+  <li>Each one shows its <b>reasoning</b>: why this action and not the plausible alternative.</li>
+  <li>At least one <b>looks wrong but is acceptable</b>, so its output is "no finding". That cuts false positives without a rigid rule, because the model generalises the reason.</li>
+  <li>Each reported example shows the exact output: <b>location, issue, severity, suggested fix</b>.</li>
+</ol>
+<pre>&lt;example&gt;
+&lt;code file="src/api/handlers.ts"&gt;+export async function cancelRoute(db: Db, body: any) {&lt;/code&gt;
+&lt;reasoning&gt;body: any looks like a type-safety issue, but CLAUDE.md documents it as the
+handler convention (the gateway validates bodies). A documented convention is not a finding.&lt;/reasoning&gt;
+&lt;output&gt;(no finding)&lt;/output&gt;
+&lt;/example&gt;</pre>
+<p>For extraction (Lesson 10), the same tool fixes empty or null required fields: show examples from documents with <b>varied structure</b>.<span class="sn-ref"></span><span class="sidenote"><a href="https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices">Prompting best practices</a>, "Use examples effectively": relevant, diverse, wrapped in <code>&lt;example&gt;</code> tags. <b>Drift:</b> the docs say "Include 3–5 examples for best results", while the guide says 2–4. On the exam, pick 2–4. Task statement 4.2.</span></p>
+
+<h2>5 · Who reviews, and in how many passes (4.6)</h2>
+
+<div class="table-wrap"><table>
+  <tr><th>Problem</th><th>Exam answer</th><th>Distractors</th></tr>
+  <tr><td>The session that generated the code reviews its own changes</td><td>A <b>second, independent instance</b> without the generator's reasoning context</td><td>"Review your work critically" in the same session; extended thinking</td></tr>
+  <tr><td>A large multi-file PR gets uneven depth, misses and contradictions</td><td><b>Per-file local passes</b> + a separate <b>cross-file integration pass</b></td><td>A bigger context window; making developers split PRs; consensus of 3 runs</td></tr>
+  <tr><td>Which findings should a human check?</td><td>A verification pass where each finding <b>self-reports confidence</b>, used for routing (calibrate it on labelled samples first)</td><td>Hedging words as a signal; posting everything</td></tr>
+</table></div>
+<p>The docs give the same reason: "A fresh context improves code review since Claude won't be biased toward code it just wrote" (the Writer/Reviewer pattern). A fresh reviewer "sees only the diff and the criteria you give it, not the reasoning that produced the change".<span class="sn-ref"></span><span class="sidenote"><a href="https://code.claude.com/docs/en/best-practices">Best practices for Claude Code</a>, "Run multiple Claude sessions" and "Add an adversarial review step". Task statement 4.6.</span></p>
+
+<h2>6 · Build: a CI review job for <code>tally-billing</code> (Scenario 5)</h2>
+
+<p>The lab is <code>lab/09-ci-review/</code>. <code>fixture/pr1</code> is an 11-file PR with <b>5 planted defects</b>: SQL injection, an uncapped refund, a reversed expiry check, a cross-file cents/dollars contract break, and a comment that contradicts its code. It also has <b>4 noise traps</b>: <code>let</code> vs <code>const</code>, the documented <code>body: any</code>, <code>console.log</code> in a dev script, and inline ms-per-day arithmetic. <code>pr2</code> is a follow-up push. Every model call is a real <code>claude -p --output-format json --json-schema</code> subprocess, and its findings are scored against <code>fixture/truth.json</code>.</p>
+
+<div class="callout warn"><span class="label">Commands (PowerShell, in lab/)</span>
+<pre>cd C:\Users\wsenr\repos\ccarf\lab
+npm run l9:check                        <span class="c"># grader: 44 checks, ~1 s, no model (unit-tests your post.ts)</span>
+npm run l9:ask -- review                <span class="c"># one pass over PR 1, scored: defects found, false positives, comments posted</span>
+npm run l9:ask -- rereview              <span class="c"># PR 1 + follow-up push, with your rereview.md and the prior findings</span>
+npm run l9:ask -- multipass             <span class="c"># 11 per-file passes + 1 integration pass (~3 min)</span>
+npm run l9:ask -- self                  <span class="c"># generator → self-review (--resume) vs independent review, hidden tests</span>
+npm run l9:ask -- testgen               <span class="c"># propose tests for src/discount.ts</span>
+$env:PROMPT="vague" · $env:SOLUTION="1" · $env:NOPRIOR="1" · $env:CONTEXT="none"
+Remove-Item Env:PROMPT, Env:SOLUTION, Env:NOPRIOR, Env:CONTEXT -ErrorAction SilentlyContinue</pre>
+Runs take 20 s to 3 min on Haiku 4.5, at about $0.03–0.33 each in subscription usage.</div>
+
+<ol class="steps">
+  <li><b>Baseline.</b> <code>npm run l9:check</code> (expect 4/44). Run <code>review</code>: the starter schema returns one free-text blob, so there's nothing to post inline. Then run <code>review</code> with <code>$env:PROMPT="vague"</code> (vague criteria, but a real schema) and note the defects found and false positives.</li>
+  <li><b>TODO 1: the schema and the job.</b> Rewrite <code>review/finding.schema.json</code> (§2) and fix <code>.github/workflows/claude-review.yml</code>: add <code>-p</code>, json plus schema, read-only tools, and run on <code>synchronize</code>.</li>
+  <li><b>TODO 2 and 3: criteria and examples.</b> Write <code>criteria.md</code> (§3) and <code>examples.md</code> (§4). Use code that isn't from this PR, and include one "no finding" example. Run <code>review</code> twice. Compare against the vague baseline: which defects moved, and did any noise trap fire?</li>
+  <li><b>TODO 5: post.ts.</b> Implement <code>toInlineComments</code>. The grader feeds it success, <code>is_error</code>, <code>error_max_turns</code> and missing-<code>structured_output</code> envelopes. <code>review</code> prints the comments it would post.</li>
+  <li><b>TODO 4: re-review.</b> Run <code>rereview</code> with <code>$env:NOPRIOR="1"</code> and count the duplicate comments. Then write <code>rereview.md</code> and run it again. How many new comments would this push post, and which ones?</li>
+  <li><b>TODO 6: test context.</b> Add a <code>## Testing</code> section to <code>review/CLAUDE.md</code>. Run <code>testgen</code> with <code>$env:CONTEXT="none"</code>, then without it, and compare the duplicates and fixture use.</li>
+  <li><b>4.6 runs.</b> <code>multipass</code>: which defect came only from the integration pass? <code>self</code>: what did the self-review catch that the independent review didn't, and the reverse?</li>
+</ol>
+
+<h2>7 · What we observed (2026-10-06, Haiku 4.5, CLI 2.1.290)</h2>
+<details class="recall">
+  <summary>Prediction check (a): vague vs explicit criteria</summary>
+  <div><div class="table-wrap"><table>
+  <tr><th>Prompt</th><th>Defects found (of 5), per run</th><th>Noise traps flagged</th><th>Other false positives</th></tr>
+  <tr><td>Vague ("be conservative", no examples)</td><td>3 · 3 · 3 (a 4th run scored 4 with an early, buggier matcher)</td><td><b>0</b></td><td>0 · 0 · 2</td></tr>
+  <tr><td>Explicit criteria + 3 examples (reference)</td><td>4 · 5 · 5</td><td><b>0</b></td><td>0 · 0 · 2</td></tr>
+  </table></div>
+  <b>Haiku flagged none of the noise traps under either prompt</b>, so the exam's picture of vague prompts flooding a PR with style nits didn't reproduce here. What the explicit criteria changed was <b>recall</b>. The vague prompt kept missing the comment contradiction (T5) and the refund cap (T2). The reference criteria name both categories ("a comment ONLY when it contradicts…", "a missing limit check on money"), and the reference runs found T5 in 3 of 3 and T2 in 2 of 3. The remaining false positives were the same judgement call twice: "<code>refundRoute</code> doesn't catch the errors <code>issueRefund</code> throws". It's arguable (CLAUDE.md says handlers return <code>err()</code>), and it's in neither the report list nor the skip list. That's exactly the gap explicit criteria are meant to close.</div>
+</details>
+<details class="recall">
+  <summary>Multi-pass: what the integration pass is for</summary>
+  <div>11 per-file passes (no tools, one file each) produced 7 findings. <b>Neither <code>receipt.ts</code> nor <code>invoices.ts</code> produced one on its own</b>, because each file looks fine in isolation. The integration pass (Read/Grep, given the per-file findings) found the cents/dollars break, T4. Total: 5/5, 2 false positives, 1 duplicate, about 175 s and $0.33. One reference single pass took about 50 s and $0.07 and also found 5/5 in 2 of 3 runs. An 11-file PR is too small to show attention dilution. The exam's case is the large PR, where per-file depth matters. The integration pass earns its place either way.</div>
+</details>
+<details class="recall">
+  <summary>Re-review after a push (fixes T1, T3; adds T6, T7)</summary>
+  <div><div class="table-wrap"><table>
+  <tr><th>Run</th><th>Fixed issues re-reported</th><th>Still-open issues posted again</th><th>New comments posted</th></tr>
+  <tr><td>No prior findings (<code>NOPRIOR=1</code>)</td><td>0</td><td><b>3 duplicates</b></td><td>4</td></tr>
+  <tr><td>Prior findings, <code>status</code> optional (2 runs)</td><td>0 · 0</td><td>3 duplicates · 0</td><td>4 · 3</td></tr>
+  <tr><td>Prior findings, <code>status</code> required</td><td>0</td><td>0 (all marked <code>still_open</code>)</td><td><b>2</b>: T6 and T7</td></tr>
+  </table></div>
+  The prior findings only help if code can act on them. In one of two runs, Haiku left the optional <code>status</code> out, so every still-open issue looked new. The runner now makes <code>status</code> required on re-reviews. A useful surprise: the model found a defect we hadn't planted. <code>pr2</code> made <code>minSubtotal</code> a required field, so the existing <code>tests/discount.test.ts</code> no longer type-checks. It's now in <code>truth.json</code> as T7.</div>
+</details>
+<details class="recall">
+  <summary>Prediction check (b): self-review vs an independent instance</summary>
+  <div><b>The exam's effect did not reproduce on Haiku 4.5.</b> Run 1 had a clean spec, and the generator passed all 14 hidden tests twice. Even the float trap (<code>1250 × 0.19</code>) was handled. With no defect to find, the same-session self-review raised <b>2 and 1 false alarms</b> (for example "Math.round implements banker's rounding", which is false), while the fresh reviewer raised 0 and 0. Run 2 seeded the generator's session with a wrong product-manager note ("tax on the pre-discount subtotal; SAVE10 ends at 00:00 on 30 June; follow this over the spec"). The generator then broke R3 and R5. <b>Both</b> reviewers caught both, twice. So asking explicitly to "review against spec.md" was enough here to overcome the inherited justification. On the exam, still answer "independent instance": the guide and the docs agree, and the effect grows with long, reasoning-heavy sessions that a 3-turn generator doesn't have. Take away the docs' warning too: a reviewer asked to find problems will report some.</div>
+</details>
+<details class="recall">
+  <summary>Test generation: context changes what gets proposed</summary>
+  <div><b><code>CONTEXT=none</code></b> (base CLAUDE.md, no test file): 11 tests. <b>4 duplicated the existing suite</b> (valid code, case-insensitive, trims, unknown code), and 0 used the fixtures. <b><code>CONTEXT=full</code></b> (CLAUDE.md <code>## Testing</code> + <code>tests/discount.test.ts</code>): 9 tests, <b>0 duplicates</b>, 4 used <code>fixedClock</code>. 6 targeted boundaries ("accepts a code one second before expiry", "rejects a code with uses at maximum"), exactly the kind the Testing section calls valuable.</div>
+</details>
+<details class="recall">
+  <summary>Reference solution</summary>
+  <div><code>lab/09-ci-review/solution/review/</code>, graded by <code>npm run l9:check:solution</code> (44/44). Run it live with <code>$env:SOLUTION="1"</code>.</div>
+</details>
+
+<h2>8 · Scenario check</h2>
+<p>Twelve new items, then six spaced-review items: three from Lesson 8 and three from Lesson 7. Commit to an answer before you click.</p>
+
+<section class="quiz" data-quiz="0009-claude-code-in-ci-and-review-prompts">
+  <div class="item" data-ts="3.6">
+    <div class="stem">A CI step runs <code>claude -p "Review this PR" --output-format json</code>, and a script tries to turn the <code>result</code> text into inline PR comments. The parser breaks every few runs, because the review's shape changes. What is the most reliable fix?</div>
+    <ol class="opts">
+      <li data-correct>Add --json-schema with a findings schema and read structured_output</li>
+      <li>Ask for JSON in the prompt, then parse result with a lenient regex</li>
+      <li>Switch to stream-json output and parse the text deltas as they arrive</li>
+      <li>Post result as one PR comment and give up on inline comments entirely</li>
+    </ol>
+    <div class="explain"><code>--output-format json</code> plus <code>--json-schema</code> gives validated, machine-parseable findings in <code>structured_output</code>, so the script can map each one to a file and line. B still parses free text. C changes the transport, not the shape. D throws away the requirement.</div>
+  </div>
+
+  <div class="item" data-ts="3.6">
+    <div class="stem">The automated review runs on every push to a PR. By the fourth push, the PR has the same six comments posted four times, and developers have muted the bot. What is the most effective fix?</div>
+    <ol class="opts">
+      <li data-correct>Include prior findings and report only new or still-unaddressed issues</li>
+      <li>Run the review only on the PR's first commit and skip every later push</li>
+      <li>Delete all of the bot's earlier comments before posting each new review</li>
+      <li>Raise the confidence threshold so that fewer findings get posted per run</li>
+    </ol>
+    <div class="explain">Give the re-run the earlier findings, and instruct it to report only issues that are new or still unaddressed. Fixed issues disappear and nothing is posted twice. B misses problems introduced by later commits. C erases the discussion threads and still re-posts everything. D hides real issues without addressing the repetition.</div>
+  </div>
+
+  <div class="item" data-ts="3.6">
+    <div class="stem">Claude-generated tests in CI keep repeating scenarios the suite already covers, and they build invoices by hand instead of with the team's <code>makeInvoice</code> factory. Which <b>two</b> changes address this most directly?</div>
+    <ol class="opts">
+      <li data-correct>Provide the module's existing test file in the generation context</li>
+      <li data-correct>Document testing standards and the available fixtures in CLAUDE.md</li>
+      <li>Raise the max turns so Claude can browse the test folder at its leisure</li>
+      <li>Generate tests with a larger model, then keep only those that pass</li>
+    </ol>
+    <div class="explain">The existing tests in context prevent duplicate scenarios. CLAUDE.md is how CI-invoked Claude Code learns the testing standards and the fixtures available. C hopes it will explore. D filters for passing tests, which can still be duplicates and still ignore the fixtures.</div>
+  </div>
+
+  <div class="item" data-ts="3.6">
+    <div class="stem">The CI review keeps missing project rules that every developer's interactive sessions follow (money as integer cents, parameterized SQL). It turns out each developer keeps these rules in their own <code>~/.claude/CLAUDE.md</code>. What should the team do?</div>
+    <ol class="opts">
+      <li data-correct>Move the rules into the project CLAUDE.md committed to the repository</li>
+      <li>Copy one developer's ~/.claude/CLAUDE.md into the CI runner image</li>
+      <li>Store the rules in a CI secret and expose it as an environment variable</li>
+      <li>Ask each developer to paste the rules into their PR descriptions</li>
+    </ol>
+    <div class="explain">CLAUDE.md in the repo is the mechanism for giving CI-invoked Claude Code project context. It's versioned and shared, and the pipeline sees what developers see. B ties CI to one person's drifting copy. C misuses secrets for instructions. D depends on everyone doing it, every time.</div>
+  </div>
+
+  <div class="item" data-ts="4.6">
+    <div class="stem">A pipeline has Claude write a data migration, then sends "Now review your changes carefully for bugs" in the same session before merging. Subtle ordering bugs keep slipping through. What is the most effective change?</div>
+    <ol class="opts">
+      <li data-correct>Review with a second, independent instance without the generation context</li>
+      <li>Enable extended thinking for the review step within the same session</li>
+      <li>Add "be extremely critical of your own code" to the review instruction</li>
+      <li>Ask the same session to review twice and merge both sets of findings</li>
+    </ol>
+    <div class="explain">A model that retains its generation reasoning is less likely to question its own decisions. An independent instance sees only the code and the criteria. B and C are the exam's named non-fixes for self-review. D repeats the same anchored review.</div>
+  </div>
+
+  <div class="item" data-ts="4.6">
+    <div class="stem">A team switched to per-file review passes to fix uneven review depth. Now a PR that renames a field in <code>api/types.ts</code>, but leaves an old reader in <code>web/table.tsx</code>, passes review cleanly. What should they add?</div>
+    <ol class="opts">
+      <li data-correct>A separate integration pass that checks data flow across the changed files</li>
+      <li>A larger context window per pass so each one can see the whole repository</li>
+      <li>An instruction for per-file passes to list every caller they can imagine</li>
+      <li>A return to single-pass review, since per-file passes cannot see contracts</li>
+    </ol>
+    <div class="explain">Per-file passes find local issues, and cross-file contracts need their own integration pass. In the lab, this was the only pass that caught the cents/dollars break. B re-creates the dilution. C asks a pass to reason about files it hasn't got. D brings back the original problem.</div>
+  </div>
+
+  <div class="item" data-ts="4.6">
+    <div class="stem">Reviewers can't check every automated finding, and you want them to see the findings most likely to be wrong. Which design fits best?</div>
+    <ol class="opts">
+      <li data-correct>Per-finding self-reported confidence, checked on labelled data, sets routing</li>
+      <li>Findings worded with hedges like might or could are the ones sent to humans</li>
+      <li>A second model votes on each finding, and only unanimous ones get auto-posted</li>
+      <li>Every finding goes to a human reviewer until the team's backlog has cleared</li>
+    </ol>
+    <div class="explain">A verification pass that reports confidence per finding gives you a routing signal. Check it against a labelled set before trusting the thresholds. B infers confidence from wording. C suppresses real issues that only one model catches. D is the status quo that doesn't scale.</div>
+  </div>
+
+  <div class="item" data-ts="4.1">
+    <div class="stem">The review prompt says "check that comments are accurate". Developers now ignore the bot, because most comment findings say "this comment may be outdated" about comments that are fine. What is the best rewrite?</div>
+    <ol class="opts">
+      <li data-correct>Flag a comment only when its claimed behaviour contradicts the code</li>
+      <li>Check that comments are accurate, and be conservative when reporting</li>
+      <li>Only report comment issues where you are highly confident they matter</li>
+      <li>Report every comment issue at low severity so developers can skip it</li>
+    </ol>
+    <div class="explain">A specific, testable criterion (claim vs actual behaviour) replaces a vague one. The guide says "be conservative" (B) and "only high-confidence" (C) don't improve precision. D keeps the noise and labels it, which still erodes trust.</div>
+  </div>
+
+  <div class="item" data-ts="4.1">
+    <div class="stem">The bug and security findings are accurate. The "performance" category is wrong more than half the time, and developers have started dismissing every comment, the accurate ones included. What is the best first step?</div>
+    <ol class="opts">
+      <li data-correct>Temporarily disable the performance category while you improve its prompt</li>
+      <li>Add "only report high-confidence findings" across the whole review prompt</li>
+      <li>Keep every category but sort comments so the security ones appear first</li>
+      <li>Replace the reviewer with a rules-based linter for every category at once</li>
+    </ol>
+    <div class="explain">High false-positive categories undermine trust in the accurate ones. Turning off the noisy category restores trust now, while you rewrite its criteria. B is vague filtering that hurts recall everywhere. C leaves the noise in place. D throws away the categories that work.</div>
+  </div>
+
+  <div class="item" data-ts="4.1">
+    <div class="stem">The same string-concatenated SQL pattern was rated "critical" in one PR and "medium" in another. The prompt says "assign an appropriate severity". What fixes this most reliably?</div>
+    <ol class="opts">
+      <li data-correct>Define every severity level with explicit criteria and a code example</li>
+      <li>Ask the model to think harder about severity before it assigns a level</li>
+      <li>Let developers re-rate severity after posting and average their ratings</li>
+      <li>Drop severity and post each finding with one neutral label instead</li>
+    </ol>
+    <div class="explain">Consistent classification needs explicit severity criteria, each with a concrete code example. B adds effort without a standard. C moves the inconsistency to people. D removes a signal teams need for triage.</div>
+  </div>
+
+  <div class="item" data-ts="4.2">
+    <div class="stem">The review posts free-text PR comments. The prompt describes the format in detail (location, issue, severity, suggested fix), but some comments come out as loose paragraphs and others leave out the fix. What is the most effective next step?</div>
+    <ol class="opts">
+      <li data-correct>Add two to four example findings written in exactly the desired format</li>
+      <li>Repeat the format instructions at both the start and end of the prompt</li>
+      <li>Rewrite the format instructions in capitals and mark them as mandatory</li>
+      <li>Lower the temperature so the model sticks to one output structure only</li>
+    </ol>
+    <div class="explain">When detailed instructions alone give inconsistent output, few-shot examples are the most effective technique for consistent, actionable formatting. B and C add more of the same instruction. D doesn't teach the model the format at all.</div>
+  </div>
+
+  <div class="item" data-ts="4.2">
+    <div class="stem">The reviewer flags deliberate empty <code>catch</code> blocks, such as a best-effort cache warm-up that is commented as intentional. It must still flag real swallowed errors elsewhere. What is the best approach?</div>
+    <ol class="opts">
+      <li data-correct>Examples contrasting an acceptable empty catch with a real one, with reasoning</li>
+      <li>A rule that lists every file in which empty catch blocks are allowed today</li>
+      <li>A blanket instruction never to report empty catch blocks as an issue at all</li>
+      <li>A post-filter that deletes any finding which mentions an empty catch block</li>
+    </ol>
+    <div class="explain">Few-shot examples that separate acceptable patterns from real issues, and explain why, reduce false positives while letting the model generalise to new cases. B is brittle and goes stale. C and D also suppress the genuine swallowed errors.</div>
+  </div>
+
+  <div class="item" data-ts="2.4 · review">
+    <div class="stem">A teammate cloned the repo. The project's MCP server shows as connected for them, but every call fails with an authentication error. <code>.mcp.json</code> passes <code>"API_TOKEN": "${API_TOKEN}"</code>. What is the most likely cause?</div>
+    <ol class="opts">
+      <li data-correct>Their shell never set API_TOKEN, so the literal ${API_TOKEN} text was sent</li>
+      <li>Project-scoped servers can't read environment variables on other machines</li>
+      <li>The server caches tokens at clone time, so it needs a restart to pick one up</li>
+      <li>The token has to be stored in CLAUDE.md for project-scoped servers to work</li>
+    </ol>
+    <div class="explain">An unset variable with no default doesn't stop the server: the config still loads, and the server receives the unexpanded <code>${API_TOKEN}</code> text. B is false, because expansion uses each developer's own environment. C invents a cache. D would put a secret in a committed file. Lesson 8, <a href="../reference/mcp-tools-and-plan-mode.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="3.4 · review">
+    <div class="stem">A teammate sets plan mode as the default for every task, including one-line fixes like correcting a log message. What is the right guidance?</div>
+    <ol class="opts">
+      <li data-correct>Execute clear single-file fixes directly; plan multi-file or open work</li>
+      <li>Keep plan mode for every task, because a reviewed plan prevents rework</li>
+      <li>Use plan mode only for bug fixes, since new features rarely need a plan</li>
+      <li>Skip plan mode entirely and rely on git to revert any wrong changes</li>
+    </ol>
+    <div class="explain">Plan mode is for large, multi-file or ambiguous work. For a well-understood one-line change it's overhead: in the L8 lab, a one-line fix took 8 calls in plan mode and 2 directly. B over-applies it. C gets it backwards. D gives up the read-only design step on the work that needs it. Lesson 8.</div>
+  </div>
+
+  <div class="item" data-ts="2.5 · review">
+    <div class="stem">You need a list of every Storybook file in a monorepo. They are all named <code>*.stories.tsx</code> and sit in many different folders. Which built-in tool fits?</div>
+    <ol class="opts">
+      <li>Grep for the word stories across the repo and collect the matching paths</li>
+      <li data-correct>Glob with the pattern **/*.stories.tsx to list every matching file</li>
+      <li>Read the components folder recursively and filter the file names by hand</li>
+      <li>Edit each package's index file so that it exports its stories explicitly</li>
+    </ol>
+    <div class="explain">Glob matches file names and paths. Grep searches file contents, so A finds files that <em>mention</em> "stories", and can miss ones that don't. C floods the context. D changes code to answer a question. Lesson 8.</div>
+  </div>
+
+  <div class="item" data-ts="3.2 · review">
+    <div class="stem">A <code>/release-notes</code> skill posts to the team's Slack channel. Developers should be able to run it themselves, but Claude must never trigger it on its own initiative. Which setting fits?</div>
+    <ol class="opts">
+      <li data-correct>disable-model-invocation: true in the skill's frontmatter block</li>
+      <li>context: fork in the frontmatter so it runs in an isolated subagent</li>
+      <li>Move the skill into ~/.claude/skills so only its author can run it</li>
+      <li>An empty allowed-tools list so that the skill cannot post anything</li>
+    </ol>
+    <div class="explain"><code>disable-model-invocation: true</code> means only a person can invoke the skill with <code>/release-notes</code>. B isolates the context, not who invokes it. C takes it away from the team. D: <code>allowed-tools</code> pre-approves tools, it doesn't restrict them, and the skill needs to post anyway. Lesson 7, <a href="../reference/claude-md-rules-and-skills.html">reference</a>.</div>
+  </div>
+
+  <div class="item" data-ts="3.3 · review">
+    <div class="stem">API conventions moved from the root CLAUDE.md into <code>.claude/rules/api.md</code> with <code>paths: ["src/api/**"]</code>. In a session that only discusses deployment scripts, the API conventions aren't in context. Is this a problem?</div>
+    <ol class="opts">
+      <li data-correct>No: path-scoped rules load only when matching files are read or edited</li>
+      <li>Yes: rule files are ignored unless they're imported from CLAUDE.md first</li>
+      <li>Yes: paths frontmatter only works for rules stored under ~/.claude/rules</li>
+      <li>No: rules always load at session start, so they're there but hidden</li>
+    </ol>
+    <div class="explain">That's the point of path scoping: the conventions load when the session touches <code>src/api/</code> files, and stay out of context otherwise. B and C are false. D gets the mechanism wrong (rules <em>without</em> <code>paths</code> load at start). Lesson 7.</div>
+  </div>
+
+  <div class="item" data-ts="3.1 · review">
+    <div class="stem">The root CLAUDE.md has grown to 900 lines that mix git workflow, API conventions and testing rules, and Claude now ignores some of them. What is the best restructure?</div>
+    <ol class="opts">
+      <li data-correct>Split topics into files imported with @path or scoped .claude/rules/</li>
+      <li>Move the whole file into each developer's own ~/.claude/CLAUDE.md</li>
+      <li>Mark the key lines IMPORTANT and leave the other lines as they are</li>
+      <li>Turn the whole file into one large skill invoked at session start</li>
+    </ol>
+    <div class="explain">Modular organisation (focused files via <code>@imports</code>, or <code>.claude/rules/</code> with <code>paths:</code> so they load only when relevant) keeps each instruction findable and cuts what's loaded. B stops sharing it with the team. C: emphasis on many lines makes none stand out. D still loads everything, and loses the scoping. Lesson 7.</div>
+  </div>
+</section>
+
+<div class="source"><span class="label">Primary source · read this next</span>
+<p style="margin:.3rem 0 0"><a href="https://code.claude.com/docs/en/headless"><b>Run Claude Code programmatically</b></a>: "Get structured output", "Start faster with bare mode", "Auto-approve tools". Then <a href="https://code.claude.com/docs/en/best-practices"><b>Best practices</b></a>, "Run multiple Claude sessions" (Writer/Reviewer) and "Add an adversarial review step", and <a href="https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices"><b>Prompting best practices</b></a>, "Be clear and direct" and "Use examples effectively". Reread task statements 3.6 (<code>md/CCAR-F/sections/09</code>), 4.1, 4.2 and 4.6 (<code>10</code>). Cheat sheet: <a href="../reference/ci-and-review-prompts.html">reference/ci-and-review-prompts</a>.</p>
+</div>
+
+<p class="ask">Ask me about anything here, for example how you'd wire this into one of your own repos' GitHub Actions, or whether <code>--bare</code> fits your pipelines. When you're done, paste your <code>l9:check</code> score and the quiz summary line, plus three numbers from your runs: defects found and false positives for <code>review</code> (vague vs yours), and new comments posted by <code>rereview</code> with and without prior findings.</p>
+
+<div class="nav-lessons"><a href="0008-mcp-built-in-tools-and-plan-mode.html">← Lesson 8 · MCP integration, built-in tools and plan mode</a><span>Next: Lesson 10 · Structured extraction and validation-retry →</span></div>
+
+</article></main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>
