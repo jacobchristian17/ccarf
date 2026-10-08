@@ -4,7 +4,7 @@
 name: Claude review
 on:
   pull_request:
-    types: [opened]
+    types: [opened, synchronize]
 jobs:
   review:
     runs-on: ubuntu-latest
@@ -17,4 +17,4 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          claude "Review this pull request"
+          claude -p --output-format json --json-schema review/finding.schema.json --allowed-tools "Read,Grep,Glob"
