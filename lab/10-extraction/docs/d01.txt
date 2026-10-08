@@ -1,0 +1,14 @@
+NORTHWIND PAPER CO.
+114 Mill Road, Dayton OH 45402
+
+INVOICE                         Invoice #: INV-1042
+Bill to: Tally Billing Ltd      Invoice date: 2026-09-03
+                                Customer PO: PO-7781
+                                Terms: Net 30
+
+| Qty | Description            | Unit price | Amount   |
+|-----|------------------------|-----------:|---------:|
+| 10  | A4 copy paper, box     |     $42.50 |  $425.00 |
+| 2   | Toner cartridge TN-450 |     $89.00 |  $178.00 |
+
+                                   TOTAL DUE: $603.00 USD

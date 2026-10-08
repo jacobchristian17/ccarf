@@ -1,0 +1,152 @@
+{
+  "_about": "Expected extraction per document. `expect` is the full answer (the mock backend replays it). `accept` lists other acceptable values for a scored field. `absent` names fields the source does not contain: any non-null value there is a fabrication. `human` marks documents that must reach the human queue, because a business rule needs information that is not in the source.",
+  "d01": {
+    "tool": "extract_invoice",
+    "absent": ["due_date", "tax_cents"],
+    "expect": {
+      "document_type": "invoice", "document_type_detail": null, "vendor_name": "Northwind Paper Co.",
+      "invoice_number": "INV-1042", "invoice_date": "2026-09-03", "due_date": null, "currency": "USD",
+      "po_number": "PO-7781", "payment_terms": "net_30", "payment_terms_detail": null,
+      "line_items": [
+        { "description": "A4 copy paper, box", "quantity": 10, "unit_price_cents": 4250, "amount_cents": 42500 },
+        { "description": "Toner cartridge TN-450", "quantity": 2, "unit_price_cents": 8900, "amount_cents": 17800 }
+      ],
+      "tax_cents": null, "stated_total_cents": 60300, "calculated_total_cents": 60300,
+      "conflict_detected": false, "conflict_detail": null
+    }
+  },
+  "d02": {
+    "tool": "extract_invoice",
+    "absent": ["due_date", "po_number", "tax_cents"],
+    "accept": { "invoice_date": [null] },
+    "expect": {
+      "document_type": "invoice", "document_type_detail": null, "vendor_name": "Brightside Cleaning",
+      "invoice_number": "BC-88", "invoice_date": "2026-09-30", "due_date": null, "currency": "USD",
+      "po_number": null, "payment_terms": "net_15", "payment_terms_detail": null,
+      "line_items": [
+        { "description": "Weekly office clean", "quantity": 4, "unit_price_cents": 15000, "amount_cents": 60000 },
+        { "description": "Carpet shampoo, meeting room", "quantity": 1, "unit_price_cents": 22000, "amount_cents": 22000 }
+      ],
+      "tax_cents": null, "stated_total_cents": 82000, "calculated_total_cents": 82000,
+      "conflict_detected": false, "conflict_detail": null
+    }
+  },
+  "d03": {
+    "tool": "extract_invoice",
+    "absent": ["po_number", "tax_cents"],
+    "expect": {
+      "document_type": "invoice", "document_type_detail": null, "vendor_name": "Atelier Lumen SARL",
+      "invoice_number": "AL/2026/311", "invoice_date": "2026-09-07", "due_date": "2026-10-07", "currency": "EUR",
+      "po_number": null, "payment_terms": "net_30", "payment_terms_detail": null,
+      "line_items": [
+        { "description": "Conseil éclairage (heures)", "quantity": 10, "unit_price_cents": 9500, "amount_cents": 95000 },
+        { "description": "Visite de site", "quantity": 1, "unit_price_cents": 30000, "amount_cents": 30000 }
+      ],
+      "tax_cents": null, "stated_total_cents": 125000, "calculated_total_cents": 125000,
+      "conflict_detected": false, "conflict_detail": null
+    }
+  },
+  "d04": {
+    "tool": "extract_invoice",
+    "absent": ["due_date", "tax_cents"],
+    "expect": {
+      "document_type": "invoice", "document_type_detail": null, "vendor_name": "Ridge IT Services LLC",
+      "invoice_number": "INV-5520", "invoice_date": "2026-09-12", "due_date": null, "currency": "USD",
+      "po_number": "PO-7790", "payment_terms": "net_30", "payment_terms_detail": null,
+      "line_items": [
+        { "description": "Laptop reimaging", "quantity": 8, "unit_price_cents": 8500, "amount_cents": 68000 },
+        { "description": "Network switch replacement, parts and labour", "quantity": null, "unit_price_cents": null, "amount_cents": 110000 },
+        { "description": "On-site support", "quantity": 2, "unit_price_cents": 8000, "amount_cents": 16000 }
+      ],
+      "tax_cents": null, "stated_total_cents": 204000, "calculated_total_cents": 194000,
+      "conflict_detected": true, "conflict_detail": "Line items sum to 1,940.00 but the amount due is 2,040.00"
+    }
+  },
+  "d05": {
+    "tool": "extract_invoice",
+    "absent": ["po_number", "due_date", "tax_cents"],
+    "human": "po_number is required for invoices of $5,000 or more, and the purchase order was not attached",
+    "expect": {
+      "document_type": "invoice", "document_type_detail": null, "vendor_name": "Bluewater Freight Inc.",
+      "invoice_number": "BW-20931", "invoice_date": "2026-09-20", "due_date": null, "currency": "USD",
+      "po_number": null, "payment_terms": "due_on_receipt", "payment_terms_detail": null,
+      "line_items": [
+        { "description": "Container drayage, Port Newark to Edison NJ", "quantity": 2, "unit_price_cents": 290000, "amount_cents": 580000 },
+        { "description": "Fuel surcharge", "quantity": null, "unit_price_cents": null, "amount_cents": 68000 }
+      ],
+      "tax_cents": null, "stated_total_cents": 648000, "calculated_total_cents": 648000,
+      "conflict_detected": false, "conflict_detail": null
+    }
+  },
+  "d06": {
+    "tool": "extract_credit_note",
+    "absent": [],
+    "expect": {
+      "vendor_name": "Northwind Paper Co.", "credit_note_number": "CM-0007", "credit_date": "2026-09-10",
+      "original_invoice_number": "INV-1042", "currency": "USD", "amount_cents": 8900,
+      "reason": "damaged_goods", "reason_detail": null
+    }
+  },
+  "d07": {
+    "tool": "extract_invoice",
+    "absent": ["due_date", "po_number", "tax_cents"],
+    "accept": { "invoice_number": ["Q-2219"] },
+    "expect": {
+      "document_type": "other", "document_type_detail": "quotation", "vendor_name": "Pixel Print Studio",
+      "invoice_number": null, "invoice_date": "2026-09-25", "due_date": null, "currency": "USD",
+      "po_number": null, "payment_terms": "other", "payment_terms_detail": "50% deposit on order, balance on delivery",
+      "line_items": [
+        { "description": "Trifold brochures, full colour", "quantity": 500, "unit_price_cents": 84, "amount_cents": 42000 },
+        { "description": "Design proof (2 rounds)", "quantity": null, "unit_price_cents": null, "amount_cents": 15000 }
+      ],
+      "tax_cents": null, "stated_total_cents": 57000, "calculated_total_cents": 57000,
+      "conflict_detected": false, "conflict_detail": null
+    }
+  },
+  "d08": {
+    "tool": "extract_invoice",
+    "absent": ["due_date", "po_number", "tax_cents"],
+    "accept": { "payment_terms": ["due_on_receipt"] },
+    "expect": {
+      "document_type": "receipt", "document_type_detail": null, "vendor_name": "Coastline Water Delivery",
+      "invoice_number": "448172", "invoice_date": "2026-09-22", "due_date": null, "currency": "USD",
+      "po_number": null, "payment_terms": null, "payment_terms_detail": null,
+      "line_items": [
+        { "description": "5-gal spring water", "quantity": 3, "unit_price_cents": 1800, "amount_cents": 5400 },
+        { "description": "Delivery fee", "quantity": null, "unit_price_cents": null, "amount_cents": 1080 }
+      ],
+      "tax_cents": null, "stated_total_cents": 6480, "calculated_total_cents": 6480,
+      "conflict_detected": false, "conflict_detail": null
+    }
+  },
+  "d09": {
+    "tool": "extract_invoice",
+    "absent": ["po_number", "tax_cents"],
+    "expect": {
+      "document_type": "invoice", "document_type_detail": null, "vendor_name": "Meridian Legal LLP",
+      "invoice_number": "ML-3310", "invoice_date": "2026-09-18", "due_date": "2026-10-15", "currency": "USD",
+      "po_number": null, "payment_terms": "unclear", "payment_terms_detail": "as agreed in our engagement letter",
+      "line_items": [
+        { "description": "Contract review (MSA, vendor DPA)", "quantity": 6.5, "unit_price_cents": 28000, "amount_cents": 182000 },
+        { "description": "Court filing fees", "quantity": null, "unit_price_cents": null, "amount_cents": 14500 }
+      ],
+      "tax_cents": null, "stated_total_cents": 196500, "calculated_total_cents": 196500,
+      "conflict_detected": false, "conflict_detail": null
+    }
+  },
+  "d10": {
+    "tool": "extract_invoice",
+    "absent": [],
+    "expect": {
+      "document_type": "invoice", "document_type_detail": null, "vendor_name": "Stackwise Inc.",
+      "invoice_number": "SW-2026-0917", "invoice_date": "2026-09-17", "due_date": "2026-10-17", "currency": "USD",
+      "po_number": "PO-7802", "payment_terms": "net_30", "payment_terms_detail": null,
+      "line_items": [
+        { "description": "Team plan, September", "quantity": 1, "unit_price_cents": 49900, "amount_cents": 49900 },
+        { "description": "Additional seats", "quantity": 3, "unit_price_cents": 2900, "amount_cents": 8700 }
+      ],
+      "tax_cents": 4688, "stated_total_cents": 63288, "calculated_total_cents": 63288,
+      "conflict_detected": false, "conflict_detail": null
+    }
+  }
+}

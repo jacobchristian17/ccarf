@@ -1,0 +1,14 @@
+From: Dana <dana@brightside-cleaning.example>
+To: accounts@tally.example
+Date: 30 Sep 2026
+Subject: September invoice BC-88
+
+Hi there,
+
+Here's our invoice BC-88 for September. We did the four weekly office cleans at $150 each,
+and the one-off carpet shampoo in the meeting room came to $220.
+
+So the total is $820. Payment within 15 days please, same bank details as always.
+
+Thanks!
+Dana, Brightside Cleaning

@@ -1,0 +1,12 @@
+# Stackwise Inc. — Invoice SW-2026-0917
+
+**Issued:** 2026-09-17 · **Due:** 2026-10-17 · **Terms:** Net 30 · **Your PO:** PO-7802
+
+| Item                              | Qty | Unit    | Amount  |
+|-----------------------------------|-----|---------|---------|
+| Team plan, September              | 1   | $499.00 | $499.00 |
+| Additional seats                  | 3   | $29.00  | $87.00  |
+
+Subtotal: $586.00
+Sales tax (8%): $46.88
+**Total: $632.88 USD**

@@ -1,0 +1,10 @@
+BLUEWATER FREIGHT INC.
+Invoice BW-20931            Issued 2026-09-20
+Customer: Tally Billing Ltd
+Purchase order: per attached purchase order
+Terms: due on receipt
+
+Container drayage, Port Newark to Edison NJ     2 x $2,900.00     $5,800.00
+Fuel surcharge                                                       $680.00
+------------------------------------------------------------------------
+Invoice total                                                      $6,480.00

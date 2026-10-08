@@ -1,0 +1,16 @@
+ATELIER LUMEN SARL
+12 rue des Arts, 69002 Lyon, France
+
+FACTURE / INVOICE N° AL/2026/311
+Date : 07.09.2026
+Échéance / Due : 07.10.2026
+Conditions : 30 jours net
+
+Client : Tally Billing Ltd
+
+Désignation                         Qté     P.U.        Montant
+Conseil éclairage (heures)          10      95,00 €     950,00 €
+Visite de site                       1     300,00 €     300,00 €
+
+TOTAL TTC                                           1.250,00 €
+Autoliquidation de TVA / VAT reverse charge

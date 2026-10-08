@@ -1,0 +1,9 @@
+NORTHWIND PAPER CO.
+CREDIT MEMO CM-0007                    Date: 2026-09-10
+Bill to: Tally Billing Ltd
+
+Re: Invoice INV-1042
+1 x Toner cartridge TN-450 arrived damaged and was returned.
+
+Credit amount: $89.00 USD
+This credit will be applied to your next invoice.
